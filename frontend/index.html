@@ -3,126 +3,71 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Hephaestus — Autonomous server rack robot</title>
-<meta name="description" content="Hephaestus is an autonomous robot that removes server boards from a rack for repair. Built at StarkHacks '26." />
+<title>solfit — pushup race on Solana</title>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<header class="nav">
-  <div class="brand">
-    <span class="spark"></span>
-    <span class="wordmark">HEPHAESTUS</span>
-  </div>
-  <nav>
-    <a href="#how">How it works</a>
-    <a href="#demo">Demo</a>
-    <a href="#features">Features</a>
-    <a href="#stack">Stack</a>
-    <a class="gh" href="https://github.com/pmxi/starkhacks" target="_blank" rel="noopener">GitHub</a>
-  </nav>
-</header>
-
 <main>
-  <section class="hero">
-    <p class="eyebrow">StarkHacks '26 · Project Hephaestus</p>
-    <h1>The robot that <span class="accent">pulls servers</span> so you don't have to.</h1>
-    <p class="lede">
-      An autonomous rack-service robot. It finds the failing board, raises to its slot,
-      latches on, and rolls it out on its rails — repeatably, in one motion.
-    </p>
-    <div class="cta">
-      <a class="btn primary" href="#demo">Try the demo</a>
-      <a class="btn ghost" href="#how">See the mechanism</a>
+  <header>
+    <h1>solfit</h1>
+    <p class="tag">Pushup race on Solana. Wager SOL. First to the target wins.</p>
+    <div class="wallet">
+      <button id="btn-connect">Connect wallet</button>
+      <span id="wallet-addr" class="mono muted"></span>
+      <span id="wallet-bal" class="mono muted"></span>
     </div>
-    <dl class="stats">
-      <div><dt>Axes</dt><dd>3</dd></div>
-      <div><dt>Runtime</dt><dd>Raspberry Pi</dd></div>
-      <div><dt>Interface</dt><dd>Web</dd></div>
-    </dl>
+  </header>
+
+  <section id="sec-create" class="card">
+    <h2>Create a match</h2>
+    <label>Target pushups <input id="in-target" type="number" value="10" min="1" /></label>
+    <label>Wager (SOL) <input id="in-wager" type="number" value="0.1" step="0.01" min="0" /></label>
+    <label>Max players <input id="in-max" type="number" value="2" min="2" max="8" /></label>
+    <button id="btn-create">Create match</button>
   </section>
 
-  <section id="how" class="how">
-    <h2>How it works</h2>
-    <ol class="steps">
-      <li>
-        <span class="n">01</span>
-        <h3>Identify</h3>
-        <p>Vision picks out the target server; the digital twin tracks its rack position.</p>
-      </li>
-      <li>
-        <span class="n">02</span>
-        <h3>Elevate</h3>
-        <p>A vertical elevator lifts the arm to the exact shelf height.</p>
-      </li>
-      <li>
-        <span class="n">03</span>
-        <h3>Extend &amp; latch</h3>
-        <p>A horizontal arm extends forward; a perpendicular gripper engages the chassis.</p>
-      </li>
-      <li>
-        <span class="n">04</span>
-        <h3>Retract</h3>
-        <p>Controlled pull along the rails, back to a drop-off position at the base.</p>
-      </li>
-    </ol>
+  <section id="sec-join" class="card">
+    <h2>Join an existing match</h2>
+    <label>Match address <input id="in-match" type="text" placeholder="paste match PDA..." /></label>
+    <button id="btn-load">Load</button>
+    <button id="btn-join">Join</button>
   </section>
 
-  <section id="demo" class="demo">
-    <div class="demo-copy">
-      <h2>Pick a server. We'll fetch it.</h2>
-      <p>Click any slot in the rack. The elevator rises, the arm extends, and the board slides out.
-        This is the same loop the real dashboard runs against the Pi.</p>
-      <div class="log" id="log" aria-live="polite">
-        <div class="log-line muted">&gt; idle. awaiting selection.</div>
-      </div>
-      <button id="reset" class="btn ghost small">Reset rack</button>
+  <section id="sec-match" class="card hidden">
+    <h2>Match</h2>
+    <div class="row">
+      <span>Address:</span>
+      <span id="m-addr" class="mono"></span>
     </div>
-    <div class="rack-wrap" aria-label="Server rack demo">
-      <div class="rack" id="rack">
-        <!-- slots injected by script -->
-      </div>
-      <div class="robot" id="robot">
-        <div class="mast"></div>
-        <div class="carriage" id="carriage">
-          <div class="arm" id="arm"><div class="gripper"></div></div>
-        </div>
-        <div class="base"></div>
-      </div>
+    <div class="row">
+      <span>Status:</span>
+      <span id="m-status"></span>
+    </div>
+    <div class="row">
+      <span>Target:</span>
+      <span id="m-target"></span>
+    </div>
+    <div class="row">
+      <span>Wager:</span>
+      <span id="m-wager"></span>
+    </div>
+    <div class="row">
+      <span>Winner:</span>
+      <span id="m-winner" class="mono"></span>
+    </div>
+    <table id="m-players"><thead><tr><th>#</th><th>Player</th><th>Count</th></tr></thead><tbody></tbody></table>
+    <div class="actions">
+      <button id="btn-start">Start</button>
+      <button id="btn-pushup">Pushup!</button>
+      <button id="btn-claim">Claim pot</button>
     </div>
   </section>
 
-  <section id="features" class="features">
-    <h2>What the software does</h2>
-    <div class="grid">
-      <article><h3>Digital twin</h3><p>Live model of rack state, slot occupancy, and history.</p></article>
-      <article><h3>Vision ID</h3><p>Per-slot identification and automatic failure detection.</p></article>
-      <article><h3>Job queue</h3><p>Autonomous task scheduler with multi-step pipelines.</p></article>
-      <article><h3>Self-calibration</h3><p>Smart alignment so the arm meets the board every time.</p></article>
-      <article><h3>Telemetry</h3><p>Real-time streams: position, load, camera feed.</p></article>
-      <article><h3>Replay</h3><p>Action logs you can scrub, diff, and replay.</p></article>
-      <article><h3>Predictive maintenance</h3><p>Flag servers likely to need service next.</p></article>
-      <article><h3>What-if mode</h3><p>Simulate the motion before the robot commits.</p></article>
-      <article><h3>Fault recovery</h3><p>Detect, back off, retry — without a human in the loop.</p></article>
-    </div>
-  </section>
-
-  <section id="stack" class="stack">
-    <h2>Architecture</h2>
-    <div class="pipe">
-      <div class="node"><strong>Web UI</strong><span>Dashboard · twin · camera</span></div>
-      <div class="arrow">→</div>
-      <div class="node"><strong>Raspberry Pi</strong><span>Control loop · vision</span></div>
-      <div class="arrow">→</div>
-      <div class="node"><strong>Robot</strong><span>Chassis · elevator · arm</span></div>
-    </div>
+  <section class="card">
+    <h2>Log</h2>
+    <pre id="log"></pre>
   </section>
 </main>
-
-<footer>
-  <span>Hephaestus · StarkHacks '26</span>
-  <a href="https://github.com/pmxi/starkhacks" target="_blank" rel="noopener">pmxi/starkhacks</a>
-</footer>
-
-<script src="script.js"></script>
+<script type="module" src="script.js"></script>
 </body>
 </html>
