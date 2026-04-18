@@ -1,56 +1,85 @@
 import { useNavigate, useLocation } from 'react-router';
-import { 
-  Trophy, 
-  Crown, 
-  Star, 
-  Home, 
-  RotateCcw,
-  Award,
-  Zap
-} from 'lucide-react';
+import { Trophy, Crown, Star, Home, RotateCcw, Award, Zap } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
+import { useGame } from '../../context/GameContext';
+import { PlayerAvatar } from './PlayerAvatar';
 
 interface ResultPlayer {
   id: string;
   name: string;
   count: number;
-  avatar: string;
   isYou: boolean;
-  prize?: string;
+  prize?: number;
 }
 
 export default function GameResults() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { playerId, updateStats } = useGame();
+  const statsUpdated = useRef(false);
 
-  const results: ResultPlayer[] = location.state?.results || [
-    { id: '1', name: 'Alex (You)', count: 48, avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100&h=100&fit=crop', isYou: true, prize: '0.36 SOL' },
-    { id: '2', name: 'Sarah', count: 42, avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop', isYou: false, prize: '0.04 SOL' },
-    { id: '3', name: 'Mike', count: 38, avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100&h=100&fit=crop', isYou: false },
-    { id: '4', name: 'Jessica', count: 35, avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&h=100&fit=crop', isYou: false },
+  const {
+    results: rawResults,
+    gameType = 'Pushup',
+    entryFee = 0.1,
+    playerCount,
+  } = (location.state ?? {}) as {
+    results?: Array<{ id: string; name: string; count: number; isYou: boolean }>;
+    gameType?: string;
+    entryFee?: number;
+    playerCount?: number;
+  };
+
+  // Fallback demo data if navigated directly
+  const rawList = rawResults ?? [
+    { id: playerId, name: 'You', count: 48, isYou: true },
+    { id: 'bot1', name: 'Bot Alpha', count: 42, isYou: false },
+    { id: 'bot2', name: 'Bot Beta', count: 38, isYou: false },
   ];
 
-  const winner = results[0];
+  const count = playerCount ?? rawList.length;
+  const totalPot = entryFee * count * 0.95;
 
+  // Assign prizes: winner takes 90%, 2nd takes 10%
+  const results: ResultPlayer[] = rawList.map((p, i) => ({
+    ...p,
+    prize: i === 0 ? parseFloat((totalPot * 0.9).toFixed(3))
+      : i === 1 && rawList.length > 1 ? parseFloat((totalPot * 0.1).toFixed(3))
+      : 0,
+  }));
+
+  const winner = results[0];
+  const myResult = results.find(p => p.id === playerId) ?? results.find(p => p.isYou);
+  const iWon = myResult && results.indexOf(myResult) === 0;
+
+  // Update persistent stats (once per result screen)
+  useEffect(() => {
+    if (statsUpdated.current || !myResult) return;
+    statsUpdated.current = true;
+    updateStats(myResult.count, myResult.prize ?? 0, gameType);
+  }, [myResult, gameType, updateStats]);
+
+  // Confetti
   useEffect(() => {
     confetti({
-      particleCount: 150,
+      particleCount: iWon ? 200 : 100,
       spread: 70,
       origin: { y: 0.6 },
-      colors: ['#b794f6', '#ffd700', '#ffffff']
+      colors: ['#b794f6', '#ffd700', '#ffffff'],
     });
-  }, []);
+  }, [iWon]);
 
   return (
     <div className="size-full flex items-center justify-center bg-[#0a0a0f] overflow-hidden">
       <div className="w-full max-w-[390px] h-full flex flex-col p-6 relative">
-        
-        {/* Ambient Celebration Glows */}
+
+        {/* Ambient glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[300px] h-[300px] bg-[#b794f6]/10 rounded-full blur-[100px] pointer-events-none" />
 
         <div className="flex-1 flex flex-col items-center pt-8 overflow-y-auto no-scrollbar">
+
           {/* Winner Section */}
           <motion.div
             initial={{ scale: 0.8, opacity: 0 }}
@@ -59,22 +88,37 @@ export default function GameResults() {
           >
             <div className="relative mb-6">
               <div className="absolute inset-0 bg-gradient-to-tr from-[#b794f6] to-[#8b5cf6] rounded-full blur-2xl opacity-30 animate-pulse" />
-              <div className="relative w-28 h-28 rounded-full border-4 border-[#b794f6] bg-black flex items-center justify-center shadow-[0_0_50px_rgba(183,148,246,0.3)]">
-                <Crown className="w-14 h-14 text-[#b794f6]" />
+              <div className="relative w-28 h-28 rounded-full border-4 border-[#b794f6] bg-[#0a0a0f] flex items-center justify-center shadow-[0_0_50px_rgba(183,148,246,0.3)] overflow-hidden">
+                <PlayerAvatar name={winner.name} size={96} className="rounded-full" showBorder={false} />
               </div>
-              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#b794f6] text-black text-[10px] font-black uppercase px-3 py-1 rounded-full shadow-lg">
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-[#b794f6] text-black text-[10px] font-black uppercase px-3 py-1 rounded-full shadow-lg whitespace-nowrap">
                 Champion
               </div>
             </div>
-            
+
             <h1 className="text-4xl font-black italic text-white tracking-tighter uppercase text-center mb-2">
-              {winner.name}
+              {winner.name}{winner.isYou ? ' (You)' : ''}
             </h1>
             <div className="flex items-center gap-2">
               <Star className="w-3 h-3 text-[#b794f6] fill-[#b794f6]" />
-              <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">New Arena Record: {winner.count} Reps</span>
+              <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">
+                {winner.count} {gameType} Reps
+              </span>
               <Star className="w-3 h-3 text-[#b794f6] fill-[#b794f6]" />
             </div>
+
+            {iWon && (
+              <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.5, type: 'spring' }}
+                className="mt-3 bg-[#b794f6]/20 border border-[#b794f6]/40 px-4 py-2 rounded-xl"
+              >
+                <span className="text-[10px] font-black text-[#b794f6] uppercase tracking-widest">
+                  You Won! 🏆
+                </span>
+              </motion.div>
+            )}
           </motion.div>
 
           {/* Prize Banner */}
@@ -89,10 +133,17 @@ export default function GameResults() {
             </div>
             <div className="flex items-center justify-between relative z-10">
               <div>
-                <span className="text-[9px] font-black text-[#b794f6] uppercase tracking-[0.2em] block mb-1">Total Solana Won</span>
+                <span className="text-[9px] font-black text-[#b794f6] uppercase tracking-[0.2em] block mb-1">
+                  {iWon ? 'Your Winnings' : 'Total Prize Pool'}
+                </span>
                 <div className="text-4xl font-black text-white italic tracking-tighter leading-none">
-                  ◎ {winner.prize || '0.360'}
+                  ◎ {iWon ? (myResult?.prize ?? 0).toFixed(3) : totalPot.toFixed(3)}
                 </div>
+                {myResult && !iWon && myResult.prize > 0 && (
+                  <div className="text-sm font-black text-[#b794f6] mt-1">
+                    Your share: ◎ {myResult.prize.toFixed(3)}
+                  </div>
+                )}
               </div>
               <div className="w-14 h-14 rounded-2xl bg-[#b794f6]/10 border border-[#b794f6]/20 flex items-center justify-center">
                 <Award className="w-8 h-8 text-[#b794f6]" />
@@ -100,29 +151,38 @@ export default function GameResults() {
             </div>
           </motion.div>
 
-          {/* Final Standings List */}
+          {/* Final Standings */}
           <div className="w-full space-y-3 mb-8">
-            <h3 className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] px-2 mb-2">Competition Rankings</h3>
+            <h3 className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] px-2 mb-2">
+              Final Rankings
+            </h3>
             {results.map((player, index) => (
               <motion.div
                 key={player.id}
                 initial={{ x: -20, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.4 + (index * 0.1) }}
+                transition={{ delay: 0.4 + index * 0.1 }}
                 className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${
-                  index === 0 
-                    ? 'bg-[#b794f6]/5 border-[#b794f6]/20' 
+                  index === 0
+                    ? 'bg-[#b794f6]/5 border-[#b794f6]/20'
+                    : player.id === playerId || player.isYou
+                    ? 'bg-white/8 border-[#b794f6]/10'
                     : 'bg-white/5 border-white/5'
                 }`}
               >
                 <div className="flex items-center gap-4">
-                  <div className={`w-5 font-black italic ${index === 0 ? 'text-[#b794f6]' : 'text-white/20'}`}>
+                  <div className={`w-5 font-black italic text-center ${index === 0 ? 'text-[#b794f6]' : 'text-white/20'}`}>
                     {index + 1}
                   </div>
-                  <img src={player.avatar} className="w-9 h-9 rounded-xl object-cover border border-white/10" alt="" />
-                  <span className={`text-sm font-bold ${index === 0 ? 'text-white' : 'text-white/60'}`}>
-                    {player.name}
-                  </span>
+                  <PlayerAvatar name={player.name} size={36} className="rounded-xl" />
+                  <div>
+                    <span className={`text-sm font-bold ${index === 0 ? 'text-white' : 'text-white/60'}`}>
+                      {player.name}{player.isYou ? ' (You)' : ''}
+                    </span>
+                    {player.prize > 0 && (
+                      <div className="text-[10px] font-black text-[#b794f6]">◎ {player.prize.toFixed(3)}</div>
+                    )}
+                  </div>
                 </div>
                 <div className="text-right">
                   <div className={`text-lg font-black italic leading-none ${index === 0 ? 'text-[#b794f6]' : 'text-white/40'}`}>
@@ -135,7 +195,7 @@ export default function GameResults() {
           </div>
         </div>
 
-        {/* Buttons Section - Exactly as requested */}
+        {/* Action Buttons */}
         <div className="flex flex-col gap-3 pb-6 bg-[#0a0a0f] pt-4">
           <button
             onClick={() => navigate('/lobby')}
@@ -144,13 +204,12 @@ export default function GameResults() {
             <RotateCcw className="w-6 h-6" />
             Play Again
           </button>
-          
           <button
             onClick={() => navigate('/')}
             className="w-full bg-white/5 hover:bg-white/10 text-white/60 rounded-2xl py-5 font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-3 border border-white/10 transition-all active:scale-95"
           >
             <Home className="w-5 h-5" />
-            Back to Home Page
+            Back to Home
           </button>
         </div>
 

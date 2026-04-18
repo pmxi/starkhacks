@@ -1,67 +1,38 @@
-import { useState } from 'react';
-import { Play, Users, UserPlus, Heart, Zap, Trophy, TrendingUp } from 'lucide-react';
+import { Play, Users, UserPlus, LogOut, Zap, Trophy, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { useGame } from '../../context/GameContext';
+import { getAvatarColor, getInitials } from '../../lib/avatar';
 
-function SetupModal({ onSave }: { onSave: (name: string) => void }) {
-  const [input, setInput] = useState('');
-
+function UserAvatar({ name, picture }: { name: string; picture: string }) {
+  if (picture) {
+    return (
+      <img
+        src={picture}
+        alt={name}
+        className="w-12 h-12 rounded-2xl object-cover border-2 border-[#b794f6]/40"
+      />
+    );
+  }
+  const color = getAvatarColor(name);
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className="w-full max-w-[340px] bg-[#111118] border border-white/10 rounded-[28px] p-8"
-      >
-        <div className="w-14 h-14 rounded-2xl bg-[#b794f6]/10 border border-[#b794f6]/20 flex items-center justify-center mb-6 mx-auto">
-          <Zap className="w-7 h-7 text-[#b794f6]" />
-        </div>
-        <h2 className="text-2xl font-black italic text-white tracking-tighter uppercase text-center mb-2">
-          Choose Your Tag
-        </h2>
-        <p className="text-white/30 text-xs font-bold uppercase tracking-widest text-center mb-8">
-          This is how others see you in the arena
-        </p>
-        <input
-          type="text"
-          placeholder="e.g. APEX_WOLF"
-          maxLength={20}
-          value={input}
-          onChange={e => setInput(e.target.value.toUpperCase())}
-          autoFocus
-          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-5 text-white text-lg font-bold placeholder:text-white/20 focus:outline-none focus:border-[#b794f6]/50 transition-all mb-4"
-        />
-        <button
-          onClick={() => input.trim() && onSave(input.trim())}
-          disabled={!input.trim()}
-          className="w-full bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] rounded-2xl py-4 font-black text-white uppercase italic tracking-tighter disabled:opacity-40 transition-all active:scale-95"
-        >
-          Enter the Arena
-        </button>
-      </motion.div>
+    <div
+      className="w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white text-sm border-2"
+      style={{ backgroundColor: color + '30', borderColor: color + '60' }}
+    >
+      {getInitials(name)}
     </div>
   );
 }
 
 export default function Home() {
   const navigate = useNavigate();
-  const { playerName, setPlayerName, stats } = useGame();
-  const [showSetup, setShowSetup] = useState(!playerName);
-
-  const handleSaveName = (name: string) => {
-    setPlayerName(name);
-    setShowSetup(false);
-  };
+  const { playerName, userPicture, stats, logout } = useGame();
 
   const gameRecord = Math.max(stats.pushupRecord, stats.squatRecord, stats.plankRecord);
 
   return (
     <div className="size-full flex items-center justify-center bg-[#0a0a0f] overflow-hidden">
-      <AnimatePresence>
-        {showSetup && <SetupModal onSave={handleSaveName} />}
-      </AnimatePresence>
-
       <div className="w-full max-w-[390px] h-full flex flex-col p-6 relative">
 
         {/* Ambient Glows */}
@@ -70,22 +41,28 @@ export default function Home() {
 
         {/* Header */}
         <div className="flex items-center justify-between mb-10 pt-4">
-          <div
-            className="flex flex-col cursor-pointer"
-            onClick={() => setShowSetup(true)}
-            title="Tap to change name"
-          >
+          <div className="flex flex-col">
             <span className="text-[10px] font-black text-[#b794f6] uppercase tracking-[0.3em]">Welcome Back</span>
             <h1 className="text-2xl font-black text-white italic tracking-tighter uppercase">
-              {playerName || 'Player_01'}
+              {playerName}
             </h1>
           </div>
-          <div
-            onClick={() => navigate('/friends')}
-            className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center relative cursor-pointer active:scale-95 transition-all"
-          >
-            <Heart className="w-5 h-5 text-white/40" />
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-[#b794f6] rounded-full border-2 border-[#0a0a0f]" />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/friends')}
+              className="relative"
+              title="Friends"
+            >
+              <UserAvatar name={playerName} picture={userPicture} />
+              <div className="absolute -top-1 -right-1 w-3 h-3 bg-[#b794f6] rounded-full border-2 border-[#0a0a0f]" />
+            </button>
+            <button
+              onClick={logout}
+              title="Log out"
+              className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
@@ -155,7 +132,7 @@ export default function Home() {
             </motion.div>
           </div>
 
-          {/* Stats Row */}
+          {/* Stats */}
           <div>
             <h4 className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em] mb-4">Your Performance</h4>
             <div className="space-y-3">
@@ -186,7 +163,7 @@ export default function Home() {
         {/* Status Bar */}
         <div className="mt-6 flex items-center justify-between px-4 py-2">
           <div className="text-[10px] font-black text-[#b794f6] uppercase tracking-[0.2em]">
-            {stats.gamesPlayed} Games Played
+            {stats.gamesPlayed} Game{stats.gamesPlayed !== 1 ? 's' : ''} Played
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-[#b794f6]" />

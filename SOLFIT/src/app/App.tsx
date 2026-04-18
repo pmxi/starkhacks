@@ -1,4 +1,5 @@
-import { RouterProvider, createBrowserRouter, Outlet } from 'react-router';
+import { RouterProvider, createBrowserRouter, Outlet, Navigate } from 'react-router';
+import { useAuth0 } from '@auth0/auth0-react';
 import Home from './components/Home';
 import CreateTeam from './components/CreateTeam';
 import JoinTeam from './components/JoinTeam';
@@ -7,8 +8,17 @@ import GameSettings from './components/GameSettings';
 import Gameplay from './components/Gameplay';
 import GameResults from './components/GameResults';
 import FriendsList from './components/FriendsList';
+import AuthPage from './components/AuthPage';
+import AuthCallback from './components/AuthCallback';
+import LoadingScreen from './components/LoadingScreen';
 
-function Root() {
+// Wraps all game routes — redirects to /auth if not logged in
+function AuthGuard() {
+  const { isAuthenticated, isLoading } = useAuth0();
+
+  if (isLoading) return <LoadingScreen message="Authenticating..." />;
+  if (!isAuthenticated) return <Navigate to="/auth" replace />;
+
   return (
     <div className="size-full">
       <Outlet />
@@ -17,43 +27,34 @@ function Root() {
 }
 
 const router = createBrowserRouter([
+  // Public routes
+  {
+    path: '/auth',
+    Component: AuthPage,
+  },
+  {
+    path: '/callback',
+    Component: AuthCallback,
+  },
+  // Protected routes — all behind AuthGuard
   {
     path: '/',
-    Component: Root,
+    Component: AuthGuard,
     children: [
-      {
-        index: true,
-        Component: Home,
-      },
-      {
-        path: 'create-team',
-        Component: CreateTeam,
-      },
-      {
-        path: 'join-team',
-        Component: JoinTeam,
-      },
-      {
-        path: 'lobby',
-        Component: Lobby,
-      },
-      {
-        path: 'game-settings',
-        Component: GameSettings,
-      },
-      {
-        path: 'gameplay',
-        Component: Gameplay,
-      },
-      {
-        path: 'results',
-        Component: GameResults,
-      },
-      {
-        path: 'friends',
-        Component: FriendsList,
-      },
+      { index: true, Component: Home },
+      { path: 'create-team', Component: CreateTeam },
+      { path: 'join-team', Component: JoinTeam },
+      { path: 'lobby', Component: Lobby },
+      { path: 'game-settings', Component: GameSettings },
+      { path: 'gameplay', Component: Gameplay },
+      { path: 'results', Component: GameResults },
+      { path: 'friends', Component: FriendsList },
     ],
+  },
+  // Catch-all
+  {
+    path: '*',
+    element: <Navigate to="/" replace />,
   },
 ]);
 
