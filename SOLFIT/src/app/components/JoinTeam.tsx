@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ChevronLeft, Clipboard, AlertCircle, Zap, ArrowRight } from 'lucide-react';
+import { ChevronLeft, Clipboard, AlertCircle, Zap, ArrowRight, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGame } from '../../context/GameContext';
 
@@ -13,29 +13,18 @@ export default function JoinTeam() {
 
   const handleJoin = async () => {
     const trimmed = code.trim().toUpperCase();
-    if (trimmed.length !== 6) {
-      setError('Code must be exactly 6 characters');
-      return;
-    }
-    if (!playerName) {
-      setError('Set your player name on the home screen first');
-      return;
-    }
-
+    if (trimmed.length !== 6) { setError('Code must be exactly 6 characters'); return; }
+    if (!playerName) { setError('Set your player name first'); return; }
     setIsJoining(true);
     setError('');
     try {
       await joinRoom(trimmed);
       navigate('/lobby');
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      if (message.includes('in progress')) {
-        setError('Game already in progress');
-      } else if (message.includes('not found') || message.includes('404')) {
-        setError('Invalid code — no room found');
-      } else {
-        setError('Could not connect. Is the server running?');
-      }
+      const message = err instanceof Error ? err.message : '';
+      if (message.includes('in progress')) setError('Game already in progress');
+      else if (message.includes('not found')) setError('Invalid code — no room found');
+      else setError('Could not connect. Is the server running?');
     } finally {
       setIsJoining(false);
     }
@@ -46,17 +35,15 @@ export default function JoinTeam() {
       const text = await navigator.clipboard.readText();
       setCode(text.substring(0, 6).toUpperCase());
       setError('');
-    } catch {
-      // clipboard permission denied
-    }
+    } catch { /* permission denied */ }
   };
 
   return (
-    <div className="size-full flex items-center justify-center bg-[#0a0a0f] overflow-hidden">
-      <div className="w-full max-w-[390px] h-full flex flex-col p-6 relative">
+    <div className="min-h-full bg-[#0a0a0f] overflow-y-auto">
+      <div className="w-full max-w-[390px] md:max-w-xl mx-auto flex flex-col p-6 md:p-10 min-h-full">
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-16 pt-4">
+        <div className="flex items-center justify-between mb-10 pt-4">
           <button
             onClick={() => navigate('/')}
             className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 active:scale-95 transition-all"
@@ -67,8 +54,11 @@ export default function JoinTeam() {
           <div className="w-10" />
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center overflow-y-auto no-scrollbar py-4">
-          <div className="w-20 h-20 rounded-[28px] bg-[#b794f6]/10 border border-[#b794f6]/20 flex items-center justify-center mb-10 relative shrink-0">
+        {/* Centered content */}
+        <div className="flex-1 flex flex-col items-center justify-center py-8">
+
+          {/* Icon */}
+          <div className="w-20 h-20 rounded-[28px] bg-[#b794f6]/10 border border-[#b794f6]/20 flex items-center justify-center mb-10 relative">
             <div className="absolute inset-0 bg-[#b794f6]/5 blur-xl rounded-full" />
             <Zap className="w-10 h-10 text-[#b794f6] relative z-10" />
           </div>
@@ -79,11 +69,10 @@ export default function JoinTeam() {
                 Enter Squad Code
               </h2>
               <p className="text-white/30 text-xs font-bold uppercase tracking-widest">
-                Request the 6-digit code from your host
+                Request the 6-character code from your host
               </p>
             </div>
 
-            {/* Joining as */}
             {playerName && (
               <div className="flex items-center justify-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-[#b794f6]" />
@@ -93,20 +82,18 @@ export default function JoinTeam() {
               </div>
             )}
 
+            {/* Code input */}
             <div className="relative group">
               <input
                 type="text"
                 maxLength={6}
                 value={code}
-                onChange={e => {
-                  setCode(e.target.value.toUpperCase());
-                  setError('');
-                }}
+                onChange={e => { setCode(e.target.value.toUpperCase()); setError(''); }}
                 onKeyDown={e => e.key === 'Enter' && handleJoin()}
                 placeholder="XXXXXX"
                 className={`w-full bg-white/5 border-2 rounded-[24px] py-6 px-4 text-center text-4xl font-black text-white placeholder:text-white/10 tracking-[0.3em] focus:outline-none transition-all ${
                   error
-                    ? 'border-red-500/50 bg-red-500/5 focus:border-red-500'
+                    ? 'border-red-500/50 bg-red-500/5'
                     : 'border-white/10 focus:border-[#b794f6]/50 focus:bg-white/10'
                 }`}
               />
@@ -131,27 +118,33 @@ export default function JoinTeam() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
-        </div>
 
-        {/* Action Button */}
-        <div className="pb-4">
-          <button
-            onClick={handleJoin}
-            disabled={!code || isJoining}
-            className="w-full relative group bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] rounded-2xl py-5 px-6 font-black text-lg text-white uppercase italic tracking-tighter transition-all duration-300 active:scale-[0.98] shadow-[0_10px_40px_rgba(183,148,246,0.4)] disabled:opacity-50"
-          >
-            <div className="flex items-center justify-center gap-3">
-              {isJoining ? (
-                <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <span>Join Game</span>
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </>
-              )}
+            {/* Join button */}
+            <button
+              onClick={handleJoin}
+              disabled={!code || isJoining}
+              className="w-full group bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] rounded-2xl py-5 px-6 font-black text-lg text-white uppercase italic tracking-tighter transition-all duration-300 active:scale-[0.98] shadow-[0_10px_40px_rgba(183,148,246,0.4)] disabled:opacity-50"
+            >
+              <div className="flex items-center justify-center gap-3">
+                {isJoining ? (
+                  <div className="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <span>Join Game</span>
+                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  </>
+                )}
+              </div>
+            </button>
+
+            {/* Trust note */}
+            <div className="flex items-center justify-center gap-2 pt-2">
+              <Shield className="w-3 h-3 text-white/20" />
+              <span className="text-[9px] font-bold text-white/20 uppercase tracking-widest">
+                Codes expire when the game starts
+              </span>
             </div>
-          </button>
+          </div>
         </div>
 
       </div>

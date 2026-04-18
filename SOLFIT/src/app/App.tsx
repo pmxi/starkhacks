@@ -10,15 +10,13 @@ import GameResults from './components/GameResults';
 import FriendsList from './components/FriendsList';
 import AuthPage from './components/AuthPage';
 import AuthCallback from './components/AuthCallback';
+import AppLayout from './components/AppLayout';
 import LoadingScreen from './components/LoadingScreen';
 
-// Wraps all game routes — redirects to /auth if not logged in
 function AuthGuard() {
   const { isAuthenticated, isLoading } = useAuth0();
-
   if (isLoading) return <LoadingScreen message="Authenticating..." />;
   if (!isAuthenticated) return <Navigate to="/auth" replace />;
-
   return (
     <div className="size-full">
       <Outlet />
@@ -27,35 +25,29 @@ function AuthGuard() {
 }
 
 const router = createBrowserRouter([
-  // Public routes
-  {
-    path: '/auth',
-    Component: AuthPage,
-  },
-  {
-    path: '/callback',
-    Component: AuthCallback,
-  },
-  // Protected routes — all behind AuthGuard
+  { path: '/auth', Component: AuthPage },
+  { path: '/callback', Component: AuthCallback },
   {
     path: '/',
     Component: AuthGuard,
     children: [
-      { index: true, Component: Home },
-      { path: 'create-team', Component: CreateTeam },
-      { path: 'join-team', Component: JoinTeam },
-      { path: 'lobby', Component: Lobby },
-      { path: 'game-settings', Component: GameSettings },
-      { path: 'gameplay', Component: Gameplay },
-      { path: 'results', Component: GameResults },
-      { path: 'friends', Component: FriendsList },
+      {
+        // AppLayout provides sidebar on desktop for all game routes
+        Component: AppLayout,
+        children: [
+          { index: true, Component: Home },
+          { path: 'create-team', Component: CreateTeam },
+          { path: 'join-team', Component: JoinTeam },
+          { path: 'lobby', Component: Lobby },
+          { path: 'game-settings', Component: GameSettings },
+          { path: 'gameplay', Component: Gameplay },
+          { path: 'results', Component: GameResults },
+          { path: 'friends', Component: FriendsList },
+        ],
+      },
     ],
   },
-  // Catch-all
-  {
-    path: '*',
-    element: <Navigate to="/" replace />,
-  },
+  { path: '*', element: <Navigate to="/" replace /> },
 ]);
 
 export default function App() {
