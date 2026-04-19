@@ -3,6 +3,7 @@ import { Home, Plus, UserPlus, Users, LogOut, Zap, Trophy, TrendingUp, Flame, X 
 import { motion, AnimatePresence } from 'motion/react';
 import { useGame } from '../../context/GameContext';
 import { getAvatarColor, getInitials } from '../../lib/avatar';
+import WalletButton from './WalletButton';
 
 const NAV = [
   { label: 'Home', path: '/', icon: Home },
@@ -116,6 +117,11 @@ export default function AppLayout() {
         <div className="flex-1" />
 
         <div className="h-px bg-white/5 mb-4" />
+
+        {/* Wallet connect */}
+        <div className="mb-3 relative z-10">
+          <WalletButton />
+        </div>
 
         {/* User profile */}
         <div className="flex items-center gap-3 mb-3 relative z-10">

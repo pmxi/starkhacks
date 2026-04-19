@@ -1,6 +1,14 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { io, Socket } from 'socket.io-client';
+import type { Program } from '@coral-xyz/anchor';
+import type { Solfit } from '../idl/solfit';
+import {
+  connectPhantom,
+  disconnectPhantom,
+  getProgram,
+  type PhantomWallet,
+} from '../lib/contest';
 
 const SERVER_URL = 'http://localhost:3001';
 
@@ -47,6 +55,11 @@ interface GameContextType {
   playerId: string;
   userEmail: string;
   userPicture: string;
+  // Solana wallet (Phantom)
+  wallet: PhantomWallet | null;
+  program: Program<Solfit> | null;
+  connectWallet: () => Promise<void>;
+  disconnectWallet: () => Promise<void>;
   // Game state
   room: Room | null;
   setRoom: (room: Room | null) => void;
@@ -95,6 +108,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const [room, setRoom] = useState<Room | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [wallet, setWallet] = useState<PhantomWallet | null>(null);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
   const clearPendingInvite = () => setPendingInvite(null);
   const [stats, setStats] = useState<Stats>(() => {
@@ -145,6 +159,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       socket.emit('register-user', { userId: playerId, username: playerName });
     }
   }, [socket, playerId, playerName]);
+
+  const program = useMemo(() => (wallet ? getProgram(wallet) : null), [wallet]);
+
+  const connectWallet = useCallback(async () => {
+    const w = await connectPhantom();
+    setWallet(w);
+  }, []);
+
+  const disconnectWallet = useCallback(async () => {
+    await disconnectPhantom();
+    setWallet(null);
+  }, []);
 
   const updateStats = useCallback((reps: number, solWon: number, gameType: string) => {
     setStats(prev => {
@@ -233,6 +259,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   return (
     <GameContext.Provider value={{
       playerName, playerId, userEmail, userPicture,
+      wallet, program, connectWallet, disconnectWallet,
       room, setRoom, socket, isHost,
       pendingInvite, clearPendingInvite,
       stats, updateStats,
