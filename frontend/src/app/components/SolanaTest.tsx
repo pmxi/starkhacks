@@ -42,6 +42,16 @@ export default function SolanaTest() {
 
   const program = wallet ? getProgram(wallet) : null;
 
+  const isAlreadyProcessed = (e: any) =>
+    String(e?.message ?? e).toLowerCase().includes("already been processed");
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
   const refresh = useCallback(
     async (addr?: string) => {
       if (!program) return;
@@ -53,10 +63,17 @@ export default function SolanaTest() {
         const data = (await program.account.contest.fetch(pk)) as ContestData;
         setContestData(data);
       } catch (e: any) {
-        append(`fetch failed: ${e.message ?? e}`);
+        const msg = String(e?.message ?? e);
+        if (msg.includes("Account does not exist")) {
+          // PDA was closed (claim succeeded, or refunded) — stop polling quietly.
+          setContestData(null);
+          stopPolling();
+        } else {
+          append(`fetch failed: ${msg}`);
+        }
       }
     },
-    [program, contestAddr, append],
+    [program, contestAddr, append, stopPolling],
   );
 
   useEffect(() => {
@@ -102,7 +119,11 @@ export default function SolanaTest() {
       setContestAddr(contestPda.toBase58());
       await refresh(contestPda.toBase58());
     } catch (e: any) {
-      append(`create failed: ${e.message ?? e}`);
+      if (isAlreadyProcessed(e)) {
+        append(`created (tx retried; first send landed) — check explorer for PDA`);
+      } else {
+        append(`create failed: ${e.message ?? e}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -116,7 +137,12 @@ export default function SolanaTest() {
       append(`joined  sig=${sig.slice(0, 12)}…`);
       await refresh();
     } catch (e: any) {
-      append(`join failed: ${e.message ?? e}`);
+      if (isAlreadyProcessed(e)) {
+        append(`joined (tx retried; first send landed)`);
+        await refresh();
+      } else {
+        append(`join failed: ${e.message ?? e}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -145,7 +171,12 @@ export default function SolanaTest() {
       append(`settled  sig=${sig.slice(0, 12)}…`);
       await refresh();
     } catch (e: any) {
-      append(`settle failed: ${e.message ?? e}`);
+      if (isAlreadyProcessed(e)) {
+        append(`settled (tx retried; first send landed)`);
+        await refresh();
+      } else {
+        append(`settle failed: ${e.message ?? e}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -159,8 +190,16 @@ export default function SolanaTest() {
       append(`claimed  sig=${sig.slice(0, 12)}…`);
       setContestData(null);
       setContestAddr("");
+      stopPolling();
     } catch (e: any) {
-      append(`claim failed: ${e.message ?? e}`);
+      if (isAlreadyProcessed(e)) {
+        append(`claimed (tx retried; first send landed)`);
+        setContestData(null);
+        setContestAddr("");
+        stopPolling();
+      } else {
+        append(`claim failed: ${e.message ?? e}`);
+      }
     } finally {
       setBusy(false);
     }
