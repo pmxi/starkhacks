@@ -1,5 +1,0 @@
-packages:
-  - 'anchor'
-  - 'frontend'
-  - 'server'
-  - 'shared'

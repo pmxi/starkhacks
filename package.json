@@ -2,13 +2,10 @@
   "name": "solfit-workspace",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "anchor:build": "pnpm -C anchor exec anchor build",
-    "anchor:test": "pnpm -C anchor exec anchor test",
-    "anchor:deploy": "pnpm -C anchor exec anchor deploy",
-    "frontend:dev": "pnpm -C frontend dev",
-    "frontend:build": "pnpm -C frontend build",
-    "server:dev": "pnpm -C server dev",
-    "server:start": "pnpm -C server start"
-  }
+  "workspaces": [
+    "anchor",
+    "frontend",
+    "server",
+    "shared"
+  ]
 }
