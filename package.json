@@ -5,7 +5,6 @@
   "workspaces": [
     "anchor",
     "frontend",
-    "server",
-    "shared"
+    "server"
   ]
 }
