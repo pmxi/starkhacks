@@ -1,10 +1,12 @@
 import { useNavigate, useLocation } from 'react-router';
-import { Trophy, Crown, Star, Home, RotateCcw, Award, Zap } from 'lucide-react';
+import { Trophy, Crown, Star, Home, RotateCcw, Award, Zap, Coins } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { PublicKey } from '@solana/web3.js';
 import confetti from 'canvas-confetti';
 import { useGame } from '../../context/GameContext';
 import { PlayerAvatar } from './PlayerAvatar';
+import { claimPot, settleWithDevJudge } from '../../lib/contest';
 
 interface ResultPlayer {
   id: string;
@@ -14,11 +16,18 @@ interface ResultPlayer {
   prize: number;
 }
 
+type OnchainStatus = 'idle' | 'settling' | 'settled' | 'claiming' | 'claimed' | 'error';
+
 export default function GameResults() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { playerId, updateStats } = useGame();
+  const { playerId, updateStats, program, wallet, room, isHost } = useGame();
   const statsUpdated = useRef(false);
+  const settledRef = useRef(false);
+
+  const [onchainStatus, setOnchainStatus] = useState<OnchainStatus>('idle');
+  const [winnerPubkey, setWinnerPubkey] = useState<string | null>(null);
+  const [onchainError, setOnchainError] = useState<string>('');
 
   const {
     results: rawResults,
@@ -57,6 +66,79 @@ export default function GameResults() {
     statsUpdated.current = true;
     updateStats(myResult.count, myResult.prize ?? 0, gameType);
   }, [myResult, gameType, updateStats]);
+
+  // Auto-settle on behalf of the room host once results are in.
+  // Anyone could call settle (permissionless), but host does it to avoid double-submits.
+  useEffect(() => {
+    const pda = room?.contestPda;
+    if (!pda || !program || !wallet || !isHost) return;
+    if (settledRef.current) return;
+    if (!rawResults || rawResults.length === 0) return;
+    settledRef.current = true;
+
+    (async () => {
+      setOnchainStatus('settling');
+      setOnchainError('');
+      try {
+        const contestPk = new PublicKey(pda);
+        // @ts-expect-error — anchor's dynamic account access
+        const contest: any = await program.account.contest.fetch(contestPk);
+
+        // Align scores with contest.players order (by walletPubkey).
+        const scores = contest.players.map((walletPk: PublicKey) => {
+          const walletStr = walletPk.toBase58();
+          const socketPlayer = room.players.find((p) => p.walletPubkey === walletStr);
+          if (!socketPlayer) return 0;
+          const res = rawResults.find((r) => r.id === socketPlayer.id);
+          return res?.count ?? 0;
+        });
+
+        if (Number(contest.status) === 2) {
+          // Already settled — skip straight to showing winner.
+          setWinnerPubkey(contest.winner.toBase58());
+          setOnchainStatus('settled');
+          return;
+        }
+
+        await settleWithDevJudge(program, contestPk, scores);
+        // @ts-expect-error
+        const refreshed: any = await program.account.contest.fetch(contestPk);
+        setWinnerPubkey(refreshed.winner.toBase58());
+        setOnchainStatus('settled');
+      } catch (e: any) {
+        const msg = String(e?.message ?? e);
+        if (msg.toLowerCase().includes('already been processed')) {
+          setOnchainStatus('settled');
+        } else {
+          setOnchainError(msg);
+          setOnchainStatus('error');
+          settledRef.current = false; // allow retry
+        }
+      }
+    })();
+  }, [room?.contestPda, room?.players, program, wallet, isHost, rawResults]);
+
+  const iAmOnchainWinner =
+    !!(winnerPubkey && wallet && wallet.publicKey.toBase58() === winnerPubkey);
+
+  async function handleClaim() {
+    const pda = room?.contestPda;
+    if (!pda || !program || !iAmOnchainWinner) return;
+    setOnchainStatus('claiming');
+    setOnchainError('');
+    try {
+      await claimPot(program, new PublicKey(pda));
+      setOnchainStatus('claimed');
+    } catch (e: any) {
+      const msg = String(e?.message ?? e);
+      if (msg.toLowerCase().includes('already been processed')) {
+        setOnchainStatus('claimed');
+      } else {
+        setOnchainError(msg);
+        setOnchainStatus('error');
+      }
+    }
+  }
 
   useEffect(() => {
     confetti({ particleCount: iWon ? 200 : 100, spread: 70, origin: { y: 0.6 }, colors: ['#b794f6', '#ffd700', '#ffffff'] });
@@ -140,8 +222,39 @@ export default function GameResults() {
               </div>
             </motion.div>
 
+            {/* On-chain status */}
+            {room?.contestPda && (
+              <div className="w-full mb-4 px-4 py-3 rounded-2xl bg-white/5 border border-white/10">
+                <div className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em] mb-1">
+                  On-chain
+                </div>
+                <div className="text-xs font-bold text-white/80">
+                  {onchainStatus === 'idle' && isHost && 'waiting for settlement…'}
+                  {onchainStatus === 'idle' && !isHost && 'waiting for host to settle…'}
+                  {onchainStatus === 'settling' && 'settling on devnet…'}
+                  {onchainStatus === 'settled' && winnerPubkey && (
+                    <>settled — winner: <code className="text-[#b794f6]">{winnerPubkey.slice(0, 4)}…{winnerPubkey.slice(-4)}</code></>
+                  )}
+                  {onchainStatus === 'claiming' && 'claiming pot…'}
+                  {onchainStatus === 'claimed' && '✓ pot claimed'}
+                  {onchainStatus === 'error' && (
+                    <span className="text-red-400">error: {onchainError.slice(0, 80)}</span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Action buttons */}
             <div className="flex flex-col gap-3 w-full">
+              {iAmOnchainWinner && onchainStatus !== 'claimed' && (
+                <button
+                  onClick={handleClaim}
+                  disabled={onchainStatus === 'claiming'}
+                  className="w-full bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] text-white rounded-2xl py-5 font-black text-lg uppercase italic tracking-tighter flex items-center justify-center gap-3 shadow-[0_10px_30px_rgba(183,148,246,0.5)] active:scale-95 transition-all disabled:opacity-50"
+                >
+                  <Coins className="w-5 h-5" /> {onchainStatus === 'claiming' ? 'Claiming…' : 'Claim Pot'}
+                </button>
+              )}
               <button
                 onClick={() => navigate('/lobby')}
                 className="w-full bg-[#b794f6] text-white rounded-2xl py-5 font-black text-lg uppercase italic tracking-tighter flex items-center justify-center gap-3 shadow-[0_10px_30px_rgba(183,148,246,0.3)] active:scale-95 transition-all"
