@@ -39,7 +39,7 @@ function calculatePrizes(players, entryFee) {
 // ── REST ──────────────────────────────────────────────────
 
 app.post('/api/rooms', (req, res) => {
-  const { teamName, gameType, playerName, playerId } = req.body;
+  const { teamName, gameType, playerName, playerId, walletPubkey } = req.body;
   if (!teamName || !gameType || !playerName || !playerId) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
@@ -49,9 +49,10 @@ app.post('/api/rooms', (req, res) => {
 
   const room = {
     code, teamName, gameType, hostId: playerId,
-    players: [{ id: playerId, name: playerName, isHost: true, isReady: true }],
+    players: [{ id: playerId, name: playerName, isHost: true, isReady: true, walletPubkey: walletPubkey ?? null }],
     settings: { reps: 30, timeLimit: 60, entryFee: 0.1 },
     status: 'lobby',
+    contestPda: null,
     createdAt: Date.now(),
   };
 
@@ -146,14 +147,33 @@ io.on('connection', (socket) => {
     currentRoom = code;
     socket.join(code);
 
-    if (!room.players.find(p => p.id === player.id)) {
+    const existing = room.players.find(p => p.id === player.id);
+    if (existing) {
+      // Update wallet pubkey if newly provided (e.g. reconnect after connecting Phantom)
+      if (player.walletPubkey && !existing.walletPubkey) {
+        existing.walletPubkey = player.walletPubkey;
+      }
+    } else {
       if (room.players.length >= 6) {
         socket.emit('error', { message: 'Room is full' });
         return;
       }
-      room.players.push({ ...player, isHost: false, isReady: false });
+      room.players.push({
+        ...player,
+        isHost: false,
+        isReady: false,
+        walletPubkey: player.walletPubkey ?? null,
+      });
     }
 
+    io.to(code).emit('lobby-update', room);
+  });
+
+  socket.on('set-contest-pda', ({ code, contestPda }) => {
+    const room = rooms.get(code);
+    if (!room) return;
+    if (room.hostId !== currentPlayerId) return; // only host can set
+    room.contestPda = contestPda;
     io.to(code).emit('lobby-update', room);
   });
 

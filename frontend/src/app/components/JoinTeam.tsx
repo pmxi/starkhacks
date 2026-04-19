@@ -6,7 +6,7 @@ import { useGame } from '../../context/GameContext';
 
 export default function JoinTeam() {
   const navigate = useNavigate();
-  const { joinRoom, playerName } = useGame();
+  const { joinRoom, playerName, wallet } = useGame();
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [isJoining, setIsJoining] = useState(false);
@@ -15,6 +15,7 @@ export default function JoinTeam() {
     const trimmed = code.trim().toUpperCase();
     if (trimmed.length !== 6) { setError('Code must be exactly 6 characters'); return; }
     if (!playerName) { setError('Set your player name first'); return; }
+    if (!wallet) { setError('Connect Phantom wallet in the sidebar first'); return; }
     setIsJoining(true);
     setError('');
     try {
@@ -24,6 +25,7 @@ export default function JoinTeam() {
       const message = err instanceof Error ? err.message : '';
       if (message.includes('in progress')) setError('Game already in progress');
       else if (message.includes('not found')) setError('Invalid code — no room found');
+      else if (message.includes('wallet')) setError(message);
       else setError('Could not connect. Is the server running?');
     } finally {
       setIsJoining(false);

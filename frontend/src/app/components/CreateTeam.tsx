@@ -14,9 +14,12 @@ const GAME_TYPE_DESC: Record<GameType, string> = {
 
 export default function CreateTeam() {
   const navigate = useNavigate();
-  const { createRoom, playerName } = useGame();
+  const { createRoom, playerName, wallet } = useGame();
   const [teamName, setTeamName] = useState('');
   const [gameType, setGameType] = useState<GameType>('Pushup');
+  const [wagerSol, setWagerSol] = useState('0.01');
+  const [maxPlayers, setMaxPlayers] = useState('2');
+  const [durationSecs, setDurationSecs] = useState('60');
   const [inviteCode, setInviteCode] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -24,13 +27,30 @@ export default function CreateTeam() {
 
   const handleGenerate = async () => {
     if (!teamName.trim()) return;
+    if (!wallet) {
+      setError('Connect Phantom wallet in the sidebar first');
+      return;
+    }
+    const wagerNum = parseFloat(wagerSol);
+    const maxNum = parseInt(maxPlayers);
+    const durNum = parseInt(durationSecs);
+    if (!(wagerNum >= 0) || !(maxNum >= 2 && maxNum <= 8) || !(durNum > 0)) {
+      setError('Bad wager / max players (2-8) / duration');
+      return;
+    }
     setIsGenerating(true);
     setError('');
     try {
-      const room = await createRoom(teamName.trim(), gameType);
+      const room = await createRoom({
+        teamName: teamName.trim(),
+        gameType,
+        wagerSol: wagerNum,
+        maxPlayers: maxNum,
+        durationSecs: durNum,
+      });
       setInviteCode(room.code);
-    } catch {
-      setError('Could not reach server. Is it running?');
+    } catch (e: any) {
+      setError(e?.message ?? 'Create failed');
     } finally {
       setIsGenerating(false);
     }
@@ -107,6 +127,55 @@ export default function CreateTeam() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* On-chain contest params */}
+            <div className="space-y-3">
+              <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.3em] ml-1">
+                On-chain Contest
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1 ml-1">Wager (SOL)</div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={wagerSol}
+                    onChange={(e) => setWagerSol(e.target.value)}
+                    disabled={!!inviteCode}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-3 text-white text-sm font-bold focus:outline-none focus:border-[#b794f6]/50 focus:bg-white/10 disabled:opacity-50"
+                  />
+                </div>
+                <div>
+                  <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1 ml-1">Players</div>
+                  <input
+                    type="number"
+                    min="2"
+                    max="8"
+                    value={maxPlayers}
+                    onChange={(e) => setMaxPlayers(e.target.value)}
+                    disabled={!!inviteCode}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-3 text-white text-sm font-bold focus:outline-none focus:border-[#b794f6]/50 focus:bg-white/10 disabled:opacity-50"
+                  />
+                </div>
+                <div>
+                  <div className="text-[9px] font-bold text-white/30 uppercase tracking-widest mb-1 ml-1">Seconds</div>
+                  <input
+                    type="number"
+                    min="5"
+                    value={durationSecs}
+                    onChange={(e) => setDurationSecs(e.target.value)}
+                    disabled={!!inviteCode}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-3 text-white text-sm font-bold focus:outline-none focus:border-[#b794f6]/50 focus:bg-white/10 disabled:opacity-50"
+                  />
+                </div>
+              </div>
+              {!wallet && (
+                <p className="text-[10px] text-amber-400 font-bold uppercase tracking-widest ml-1">
+                  Connect Phantom (sidebar) before creating
+                </p>
+              )}
             </div>
           </div>
 

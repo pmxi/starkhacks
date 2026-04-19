@@ -1,12 +1,16 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { io, Socket } from 'socket.io-client';
-import type { Program } from '@coral-xyz/anchor';
+import { BN, type Program } from '@coral-xyz/anchor';
+import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 import type { Solfit } from '../idl/solfit';
 import {
   connectPhantom,
+  createContest,
   disconnectPhantom,
+  getDevJudge,
   getProgram,
+  joinContest,
   type PhantomWallet,
 } from '../lib/contest';
 
@@ -17,6 +21,7 @@ export interface Player {
   name: string;
   isHost: boolean;
   isReady: boolean;
+  walletPubkey?: string | null;
 }
 
 export interface GameSettings {
@@ -33,6 +38,7 @@ export interface Room {
   players: Player[];
   settings: GameSettings;
   status: 'lobby' | 'playing' | 'ended';
+  contestPda?: string | null;
 }
 
 export interface Stats {
@@ -72,7 +78,13 @@ interface GameContextType {
   stats: Stats;
   updateStats: (reps: number, solWon: number, gameType: string) => void;
   // Actions
-  createRoom: (teamName: string, gameType: string) => Promise<Room>;
+  createRoom: (opts: {
+    teamName: string;
+    gameType: string;
+    wagerSol: number;
+    maxPlayers: number;
+    durationSecs: number;
+  }) => Promise<Room>;
   joinRoom: (code: string) => Promise<Room>;
   leaveRoom: () => void;
   emitSettings: (settings: GameSettings) => void;
@@ -188,37 +200,99 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
   }, [statsKey]);
 
-  const createRoom = useCallback(async (teamName: string, gameType: string): Promise<Room> => {
-    const res = await fetch(`${SERVER_URL}/api/rooms`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ teamName, gameType, playerName, playerId }),
-    });
-    if (!res.ok) throw new Error('Failed to create room');
-    const data = await res.json();
-    const newRoom = data.room as Room;
-    setRoom(newRoom);
-    socket?.emit('join-room', {
-      code: newRoom.code,
-      player: { id: playerId, name: playerName, isHost: true, isReady: true },
-    });
-    return newRoom;
-  }, [playerName, playerId, socket]);
+  const createRoom = useCallback(
+    async (opts: {
+      teamName: string;
+      gameType: string;
+      wagerSol: number;
+      maxPlayers: number;
+      durationSecs: number;
+    }): Promise<Room> => {
+      if (!wallet || !program) throw new Error('Connect Phantom wallet first');
+      const walletPubkey = wallet.publicKey.toBase58();
 
-  const joinRoom = useCallback(async (code: string): Promise<Room> => {
-    const res = await fetch(`${SERVER_URL}/api/rooms/${code.toUpperCase()}`);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error((err as { error?: string }).error || 'Room not found');
-    }
-    const existingRoom = await res.json() as Room;
-    setRoom(existingRoom);
-    socket?.emit('join-room', {
-      code: code.toUpperCase(),
-      player: { id: playerId, name: playerName, isHost: false, isReady: false },
-    });
-    return existingRoom;
-  }, [playerName, playerId, socket]);
+      // 1. Create socket room.
+      const res = await fetch(`${SERVER_URL}/api/rooms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teamName: opts.teamName,
+          gameType: opts.gameType,
+          playerName,
+          playerId,
+          walletPubkey,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to create room');
+      const data = await res.json();
+      const newRoom = data.room as Room;
+      setRoom(newRoom);
+      socket?.emit('join-room', {
+        code: newRoom.code,
+        player: { id: playerId, name: playerName, isHost: true, isReady: true, walletPubkey },
+      });
+
+      // 2. Create on-chain contest. Dev judge for now; swap to real server later.
+      const idBytes = new Uint8Array(8);
+      crypto.getRandomValues(idBytes);
+      const contestId = new BN(idBytes);
+      const { contestPda } = await createContest(program, {
+        contestId,
+        wagerLamports: new BN(Math.round(opts.wagerSol * LAMPORTS_PER_SOL)),
+        maxPlayers: opts.maxPlayers,
+        durationSecs: opts.durationSecs,
+        judge: getDevJudge().publicKey,
+      });
+      const pdaStr = contestPda.toBase58();
+      socket?.emit('set-contest-pda', { code: newRoom.code, contestPda: pdaStr });
+      setRoom(prev => (prev ? { ...prev, contestPda: pdaStr } : prev));
+      return { ...newRoom, contestPda: pdaStr };
+    },
+    [playerName, playerId, socket, wallet, program],
+  );
+
+  const joinRoom = useCallback(
+    async (code: string): Promise<Room> => {
+      if (!wallet) throw new Error('Connect Phantom wallet first');
+      const walletPubkey = wallet.publicKey.toBase58();
+      const res = await fetch(`${SERVER_URL}/api/rooms/${code.toUpperCase()}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || 'Room not found');
+      }
+      const existingRoom = (await res.json()) as Room;
+      setRoom(existingRoom);
+      socket?.emit('join-room', {
+        code: code.toUpperCase(),
+        player: { id: playerId, name: playerName, isHost: false, isReady: false, walletPubkey },
+      });
+      return existingRoom;
+    },
+    [playerName, playerId, socket, wallet],
+  );
+
+  // Track which contest PDA we've joined on-chain, per browser session.
+  // Every player (host or joiner) needs to join once contestPda is known.
+  const joinedContestRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const pda = room?.contestPda;
+    if (!pda || !program || !wallet) return;
+    if (joinedContestRef.current === pda) return;
+    joinedContestRef.current = pda;
+
+    (async () => {
+      try {
+        await joinContest(program, new PublicKey(pda));
+      } catch (e: any) {
+        const msg = String(e?.message ?? e);
+        // Already-joined and already-processed are both fine — we got in.
+        if (msg.includes('AlreadyJoined') || msg.toLowerCase().includes('already been processed')) return;
+        joinedContestRef.current = null; // allow retry on next contestPda change
+        console.error('joinContest failed:', msg);
+      }
+    })();
+  }, [room?.contestPda, program, wallet]);
 
   const leaveRoom = useCallback(() => {
     const r = roomRef.current;
