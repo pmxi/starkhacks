@@ -1,21 +1,14 @@
 {
-  "name": "solfit",
+  "name": "solfit-workspace",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
-  },
-  "dependencies": {
-    "@coral-xyz/anchor": "^0.32.1"
-  },
-  "devDependencies": {
-    "@types/bn.js": "^5.1.5",
-    "@types/chai": "^4.3.0",
-    "@types/mocha": "^10.0.6",
-    "chai": "^4.3.4",
-    "mocha": "^10.3.0",
-    "prettier": "^2.6.2",
-    "ts-mocha": "^10.0.0",
-    "typescript": "^5.3.3"
+    "anchor:build": "pnpm -C anchor exec anchor build",
+    "anchor:test": "pnpm -C anchor exec anchor test",
+    "anchor:deploy": "pnpm -C anchor exec anchor deploy",
+    "frontend:dev": "pnpm -C frontend dev",
+    "frontend:build": "pnpm -C frontend build",
+    "server:dev": "pnpm -C server dev",
+    "server:start": "pnpm -C server start"
   }
 }

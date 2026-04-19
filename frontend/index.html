@@ -1,73 +1,16 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>solfit — pushup race on Solana</title>
-<link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-<main>
-  <header>
-    <h1>solfit</h1>
-    <p class="tag">Pushup race on Solana. Wager SOL. First to the target wins.</p>
-    <div class="wallet">
-      <button id="btn-connect">Connect wallet</button>
-      <span id="wallet-addr" class="mono muted"></span>
-      <span id="wallet-bal" class="mono muted"></span>
-    </div>
-  </header>
 
-  <section id="sec-create" class="card">
-    <h2>Create a match</h2>
-    <label>Target pushups <input id="in-target" type="number" value="10" min="1" /></label>
-    <label>Wager (SOL) <input id="in-wager" type="number" value="0.1" step="0.01" min="0" /></label>
-    <label>Max players <input id="in-max" type="number" value="2" min="2" max="8" /></label>
-    <button id="btn-create">Create match</button>
-  </section>
+  <!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>SOLFIT</title>
+      <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
+    </head>
 
-  <section id="sec-join" class="card">
-    <h2>Join an existing match</h2>
-    <label>Match address <input id="in-match" type="text" placeholder="paste match PDA..." /></label>
-    <button id="btn-load">Load</button>
-    <button id="btn-join">Join</button>
-  </section>
-
-  <section id="sec-match" class="card hidden">
-    <h2>Match</h2>
-    <div class="row">
-      <span>Address:</span>
-      <span id="m-addr" class="mono"></span>
-    </div>
-    <div class="row">
-      <span>Status:</span>
-      <span id="m-status"></span>
-    </div>
-    <div class="row">
-      <span>Target:</span>
-      <span id="m-target"></span>
-    </div>
-    <div class="row">
-      <span>Wager:</span>
-      <span id="m-wager"></span>
-    </div>
-    <div class="row">
-      <span>Winner:</span>
-      <span id="m-winner" class="mono"></span>
-    </div>
-    <table id="m-players"><thead><tr><th>#</th><th>Player</th><th>Count</th></tr></thead><tbody></tbody></table>
-    <div class="actions">
-      <button id="btn-start">Start</button>
-      <button id="btn-pushup">Pushup!</button>
-      <button id="btn-claim">Claim pot</button>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>Log</h2>
-    <pre id="log"></pre>
-  </section>
-</main>
-<script type="module" src="script.js"></script>
-</body>
-</html>
+    <body>
+      <div id="root"></div>
+      <script type="module" src="/src/main.tsx"></script>
+    </body>
+  </html>
+  
