@@ -81,8 +81,15 @@ io.on('connection', (socket) => {
 
   socket.on('register-user', ({ userId, username }) => {
     currentPlayerId = userId;
-    users.set(userId, { username });
+    users.set(userId, { username, socketId: socket.id });
     if (!friendships.has(userId)) friendships.set(userId, new Set());
+  });
+
+  socket.on('invite-to-game', ({ roomCode, fromUsername, toId }) => {
+    const target = users.get(toId);
+    if (target?.socketId) {
+      io.to(target.socketId).emit('game-invite', { roomCode, fromUsername });
+    }
   });
 
   // ── Friend system ──
@@ -205,6 +212,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    if (currentPlayerId) {
+      const info = users.get(currentPlayerId);
+      if (info && info.socketId === socket.id) {
+        users.set(currentPlayerId, { ...info, socketId: null });
+      }
+    }
     if (!currentRoom || !currentPlayerId) return;
     const room = rooms.get(currentRoom);
     if (!room) return;

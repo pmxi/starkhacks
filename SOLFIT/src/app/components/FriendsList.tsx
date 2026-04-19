@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { ChevronLeft, UserPlus, X, UserMinus, Users, Send, AlertCircle, Loader2, Check } from 'lucide-react';
+import {
+  ChevronLeft, UserPlus, X, UserMinus, Users,
+  AlertCircle, Loader2, Check, Zap,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGame } from '../../context/GameContext';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -10,15 +13,25 @@ interface FriendEntry {
   username: string;
 }
 
+const GAME_TYPES = ['Pushup', 'Squat', 'Plank'] as const;
+type GameType = typeof GAME_TYPES[number];
+
 export default function FriendsList() {
   const navigate = useNavigate();
-  const { socket, playerId, playerName } = useGame();
+  const { socket, playerId, playerName, createRoom } = useGame();
 
   const [friends, setFriends] = useState<FriendEntry[]>([]);
-  const [showModal, setShowModal] = useState(false);
+
+  // Add friend modal
+  const [showAddModal, setShowAddModal] = useState(false);
   const [inputUsername, setInputUsername] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const [message, setMessage] = useState('');
+  const [addStatus, setAddStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [addMessage, setAddMessage] = useState('');
+
+  // Invite to game modal
+  const [inviteTarget, setInviteTarget] = useState<FriendEntry | null>(null);
+  const [gameType, setGameType] = useState<GameType>('Pushup');
+  const [inviting, setInviting] = useState(false);
 
   const refresh = useCallback(() => {
     socket?.emit('get-friends', { userId: playerId });
@@ -29,9 +42,9 @@ export default function FriendsList() {
     refresh();
 
     const onData = ({ friends }: { friends: FriendEntry[] }) => setFriends(friends);
-    const onResult = ({ ok, message: msg }: { ok: boolean; message: string }) => {
-      setStatus(ok ? 'success' : 'error');
-      setMessage(msg);
+    const onResult = ({ ok, message }: { ok: boolean; message: string }) => {
+      setAddStatus(ok ? 'success' : 'error');
+      setAddMessage(message);
       if (ok) setInputUsername('');
     };
 
@@ -46,8 +59,8 @@ export default function FriendsList() {
   const handleAdd = () => {
     const trimmed = inputUsername.trim().replace(/^@/, '');
     if (!trimmed) return;
-    setStatus('loading');
-    setMessage('');
+    setAddStatus('loading');
+    setAddMessage('');
     socket?.emit('add-friend', { fromId: playerId, toUsername: trimmed });
   };
 
@@ -55,11 +68,29 @@ export default function FriendsList() {
     socket?.emit('remove-friend', { userId: playerId, friendId });
   };
 
-  const closeModal = () => {
-    setShowModal(false);
+  const handleInvite = async () => {
+    if (!inviteTarget) return;
+    setInviting(true);
+    try {
+      const teamName = `${playerName} vs ${inviteTarget.username}`;
+      const room = await createRoom(teamName, gameType);
+      socket?.emit('invite-to-game', {
+        roomCode: room.code,
+        fromUsername: playerName,
+        toId: inviteTarget.id,
+      });
+      setInviteTarget(null);
+      navigate('/lobby');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const closeAddModal = () => {
+    setShowAddModal(false);
     setInputUsername('');
-    setStatus('idle');
-    setMessage('');
+    setAddStatus('idle');
+    setAddMessage('');
   };
 
   return (
@@ -76,7 +107,7 @@ export default function FriendsList() {
           </button>
           <h1 className="text-xl font-black italic text-white tracking-tighter uppercase">Squad</h1>
           <button
-            onClick={() => { setShowModal(true); setStatus('idle'); setMessage(''); }}
+            onClick={() => { setShowAddModal(true); setAddStatus('idle'); setAddMessage(''); }}
             className="w-10 h-10 rounded-xl bg-[#b794f6] flex items-center justify-center text-white shadow-[0_4px_15px_rgba(183,148,246,0.3)] active:scale-95 transition-all"
           >
             <UserPlus className="w-5 h-5" />
@@ -127,11 +158,11 @@ export default function FriendsList() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => navigate('/create-team')}
-                        title="Invite to game"
+                        onClick={() => setInviteTarget(friend)}
+                        title="Start game together"
                         className="w-9 h-9 rounded-xl bg-[#b794f6]/10 text-[#b794f6] border border-[#b794f6]/20 flex items-center justify-center hover:bg-[#b794f6] hover:text-white transition-all active:scale-95"
                       >
-                        <Send className="w-3.5 h-3.5" />
+                        <Zap className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleRemove(friend.id)}
@@ -149,15 +180,81 @@ export default function FriendsList() {
         )}
       </div>
 
-      {/* Add Friend Modal */}
+      {/* ── Invite to Game Modal ── */}
       <AnimatePresence>
-        {showModal && (
+        {inviteTarget && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-6"
-            onClick={e => { if (e.target === e.currentTarget) closeModal(); }}
+            onClick={e => { if (e.target === e.currentTarget && !inviting) setInviteTarget(null); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-sm bg-[#0f0f18] border border-white/10 rounded-[28px] p-8 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-black text-white italic uppercase tracking-tighter">Start Game</h2>
+                {!inviting && (
+                  <button onClick={() => setInviteTarget(null)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 mb-6 p-3 bg-white/5 rounded-2xl">
+                <PlayerAvatar name={inviteTarget.username} size={40} className="rounded-xl" />
+                <div>
+                  <p className="text-xs font-black text-white/30 uppercase tracking-widest">Playing with</p>
+                  <p className="text-sm font-bold text-[#b794f6]">{inviteTarget.username}</p>
+                </div>
+              </div>
+
+              <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-3">Choose game type</p>
+              <div className="grid grid-cols-3 gap-2 mb-6">
+                {GAME_TYPES.map(type => (
+                  <button
+                    key={type}
+                    onClick={() => setGameType(type)}
+                    className={`py-3 rounded-xl text-[11px] font-black uppercase tracking-tight transition-all ${
+                      gameType === type
+                        ? 'bg-[#b794f6] text-white shadow-lg shadow-[#b794f6]/20'
+                        : 'bg-white/5 text-white/40 border border-white/5 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {type}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={handleInvite}
+                disabled={inviting}
+                className="w-full bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] rounded-2xl py-4 font-black text-white uppercase italic tracking-tighter transition-all active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {inviting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <><Zap className="w-4 h-4" /> Create &amp; Invite</>
+                )}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Add Friend Modal ── */}
+      <AnimatePresence>
+        {showAddModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-6"
+            onClick={e => { if (e.target === e.currentTarget) closeAddModal(); }}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -167,7 +264,7 @@ export default function FriendsList() {
             >
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-lg font-black text-white italic uppercase tracking-tighter">Add Friend</h2>
-                <button onClick={closeModal} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-colors">
+                <button onClick={closeAddModal} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-white/40 hover:text-white transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -181,7 +278,7 @@ export default function FriendsList() {
                   type="text"
                   placeholder="username"
                   value={inputUsername}
-                  onChange={e => { setInputUsername(e.target.value); setStatus('idle'); setMessage(''); }}
+                  onChange={e => { setInputUsername(e.target.value); setAddStatus('idle'); setAddMessage(''); }}
                   onKeyDown={e => e.key === 'Enter' && handleAdd()}
                   autoFocus
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-8 pr-4 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-[#b794f6]/50 focus:bg-white/10 transition-all"
@@ -189,29 +286,25 @@ export default function FriendsList() {
               </div>
 
               <AnimatePresence>
-                {message && (
+                {addMessage && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className={`flex items-center gap-2 mb-4 text-xs font-bold ${status === 'error' ? 'text-red-400' : 'text-[#b794f6]'}`}
+                    className={`flex items-center gap-2 mb-4 text-xs font-bold ${addStatus === 'error' ? 'text-red-400' : 'text-[#b794f6]'}`}
                   >
-                    {status === 'error'
-                      ? <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      : <Check className="w-3.5 h-3.5 shrink-0" />}
-                    {message}
+                    {addStatus === 'error' ? <AlertCircle className="w-3.5 h-3.5 shrink-0" /> : <Check className="w-3.5 h-3.5 shrink-0" />}
+                    {addMessage}
                   </motion.div>
                 )}
               </AnimatePresence>
 
               <button
                 onClick={handleAdd}
-                disabled={!inputUsername.trim() || status === 'loading'}
+                disabled={!inputUsername.trim() || addStatus === 'loading'}
                 className="w-full bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] rounded-2xl py-4 font-black text-white uppercase italic tracking-tighter transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {status === 'loading'
-                  ? <Loader2 className="w-5 h-5 animate-spin" />
-                  : <><UserPlus className="w-4 h-4" /> Add Friend</>}
+                {addStatus === 'loading' ? <Loader2 className="w-5 h-5 animate-spin" /> : <><UserPlus className="w-4 h-4" /> Add Friend</>}
               </button>
             </motion.div>
           </motion.div>

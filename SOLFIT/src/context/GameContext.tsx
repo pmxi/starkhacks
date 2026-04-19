@@ -36,6 +36,11 @@ export interface Stats {
   gamesPlayed: number;
 }
 
+export interface PendingInvite {
+  roomCode: string;
+  fromUsername: string;
+}
+
 interface GameContextType {
   // Identity — sourced from Auth0
   playerName: string;
@@ -47,6 +52,9 @@ interface GameContextType {
   setRoom: (room: Room | null) => void;
   socket: Socket | null;
   isHost: boolean;
+  // Incoming game invite from a friend
+  pendingInvite: PendingInvite | null;
+  clearPendingInvite: () => void;
   // Stats (persisted per Auth0 user)
   stats: Stats;
   updateStats: (reps: number, solWon: number, gameType: string) => void;
@@ -87,6 +95,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const [room, setRoom] = useState<Room | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
+  const clearPendingInvite = () => setPendingInvite(null);
   const [stats, setStats] = useState<Stats>(() => {
     try {
       const stored = localStorage.getItem(statsKey);
@@ -119,6 +129,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     s.on('settings-update', (settings: GameSettings) => {
       setRoom(prev => prev ? { ...prev, settings } : prev);
+    });
+
+    s.on('game-invite', (invite: PendingInvite) => {
+      setPendingInvite(invite);
     });
 
     setSocket(s);
@@ -219,8 +233,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   return (
     <GameContext.Provider value={{
       playerName, playerId, userEmail, userPicture,
-      room, setRoom, socket, isHost, stats,
-      updateStats, createRoom, joinRoom, leaveRoom,
+      room, setRoom, socket, isHost,
+      pendingInvite, clearPendingInvite,
+      stats, updateStats,
+      createRoom, joinRoom, leaveRoom,
       emitSettings, emitStartGame, emitRepUpdate, emitGameEnd,
       logout,
     }}>

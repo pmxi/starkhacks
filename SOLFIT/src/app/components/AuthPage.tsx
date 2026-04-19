@@ -106,7 +106,7 @@ export default function AuthPage() {
           Turn Your Reps Into <span className="text-[#b794f6]">Rewards</span>
         </h2>
         <p className="text-white/40 text-sm md:text-base leading-relaxed">
-          Join squads, set challenges, and compete for real Solana prizes — all tracked live with AI precision.
+          Join squads, set challenges, and compete for real Solana prizes.
         </p>
       </motion.div>
 
