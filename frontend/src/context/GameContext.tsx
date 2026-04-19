@@ -15,6 +15,7 @@ import {
 } from '../lib/contest';
 
 const SERVER_URL = 'http://localhost:3001';
+const ESP_ID = import.meta.env.VITE_ESP_ID as string | undefined;
 
 export interface Player {
   id: string;
@@ -71,6 +72,9 @@ interface GameContextType {
   setRoom: (room: Room | null) => void;
   socket: Socket | null;
   isHost: boolean;
+  // ESP32 rep sensor (optional; only wired if VITE_ESP_ID is set)
+  espSocket: WebSocket | null;
+  espConnected: boolean;
   // Incoming game invite from a friend
   pendingInvite: PendingInvite | null;
   clearPendingInvite: () => void;
@@ -121,6 +125,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [room, setRoom] = useState<Room | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [wallet, setWallet] = useState<PhantomWallet | null>(null);
+  const [espSocket, setEspSocket] = useState<WebSocket | null>(null);
+  const [espConnected, setEspConnected] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
   const clearPendingInvite = () => setPendingInvite(null);
   const [stats, setStats] = useState<Stats>(() => {
@@ -134,6 +140,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const roomRef = useRef<Room | null>(room);
   roomRef.current = room;
+  const espSocketRef = useRef<WebSocket | null>(null);
 
   // Reload stats if user changes (different player logs in)
   useEffect(() => {
@@ -163,6 +170,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     setSocket(s);
     return () => { s.disconnect(); };
+  }, []);
+
+  // Open a persistent WebSocket to the ESP32 rep sensor, if one is configured.
+  // If VITE_ESP_ID is unset, the integration is a no-op — MediaPipe still works.
+  useEffect(() => {
+    if (!ESP_ID) {
+      setEspSocket(null);
+      setEspConnected(false);
+      return;
+    }
+    const ws = new WebSocket(`ws://${ESP_ID}/ws`);
+    espSocketRef.current = ws;
+    setEspSocket(ws);
+    ws.addEventListener('open', () => setEspConnected(true));
+    ws.addEventListener('close', () => setEspConnected(false));
+    ws.addEventListener('error', () => setEspConnected(false));
+    return () => {
+      ws.close();
+      setEspConnected(false);
+      setEspSocket(null);
+      espSocketRef.current = null;
+    };
   }, []);
 
   // Register identity with server whenever socket or user changes
@@ -312,7 +341,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const emitStartGame = useCallback((settings: GameSettings) => {
     const r = roomRef.current;
-    if (r && socket) socket.emit('start-game', { code: r.code, settings });
+    if (!r || !socket) return;
+    // Reset the ESP's rep counter at the start of a new match, if connected.
+    if (espSocketRef.current?.readyState === WebSocket.OPEN) {
+      espSocketRef.current.send('RESET');
+    }
+    socket.emit('start-game', { code: r.code, settings });
   }, [socket]);
 
   const emitRepUpdate = useCallback((count: number) => {
@@ -337,6 +371,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       playerName, playerId, userEmail, userPicture,
       wallet, program, connectWallet, disconnectWallet,
       room, setRoom, socket, isHost,
+      espSocket, espConnected,
       pendingInvite, clearPendingInvite,
       stats, updateStats,
       createRoom, joinRoom, leaveRoom,

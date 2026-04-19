@@ -15,7 +15,7 @@ interface LivePlayer {
 
 export default function Gameplay() {
   const navigate = useNavigate();
-  const { room, socket, playerId, emitRepUpdate, emitGameEnd } = useGame();
+  const { room, socket, playerId, emitRepUpdate, emitGameEnd, espSocket, espConnected } = useGame();
 
   const settings = room?.settings ?? { reps: 30, timeLimit: 60, entryFee: 0.1 };
   const gameType = room?.gameType ?? 'Pushup';
@@ -43,6 +43,32 @@ export default function Gameplay() {
     socket.on('rep-update', handler);
     return () => { socket.off('rep-update', handler); };
   }, [socket]);
+
+  // ESP32 sensor feed. Parses {reps|count: N} JSON pushed over the WebSocket,
+  // bumps our own count monotonically, and broadcasts via socket so the
+  // other players in the room see it. MediaPipe (WorkoutCamera) can also
+  // fire reps; both sources feed the same local count.
+  useEffect(() => {
+    if (!espSocket || !playerId) return;
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        const count =
+          typeof data.reps === 'number' ? data.reps :
+          typeof data.count === 'number' ? data.count :
+          null;
+        if (count === null) return;
+        const previousCount = playersRef.current.find(p => p.id === playerId)?.count ?? 0;
+        if (count <= previousCount) return;
+        setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, count } : p));
+        emitRepUpdate(count);
+      } catch {
+        /* ignore malformed ESP payloads */
+      }
+    };
+    espSocket.addEventListener('message', handleMessage);
+    return () => espSocket.removeEventListener('message', handleMessage);
+  }, [espSocket, emitRepUpdate, playerId]);
 
   // Simulated AI progress for non-self players
   useEffect(() => {
@@ -217,6 +243,19 @@ export default function Gameplay() {
                   gameType={gameType}
                 />
               </div>
+            </div>
+
+            {/* ESP sensor status (only when VITE_ESP_ID is configured) */}
+            <div
+              className={`rounded-2xl px-4 py-3 text-center border transition-colors ${
+                espConnected
+                  ? 'border-[#b794f6]/40 bg-[#b794f6]/10 text-[#b794f6]'
+                  : 'border-white/10 bg-white/5 text-white/40'
+              }`}
+            >
+              <span className="text-[10px] font-black uppercase tracking-[0.2em]">
+                {espConnected ? 'ESP sensor live' : 'ESP sensor offline'}
+              </span>
             </div>
 
           </div>
