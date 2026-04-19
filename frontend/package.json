@@ -44,6 +44,7 @@
     "@radix-ui/react-tooltip": "1.1.8",
     "@react-three/fiber": "^8.17.10",
     "@solana/web3.js": "^1.98.4",
+    "buffer": "^6.0.3",
     "canvas-confetti": "1.9.4",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",

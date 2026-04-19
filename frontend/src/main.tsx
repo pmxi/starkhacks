@@ -1,3 +1,7 @@
+import { Buffer } from 'buffer';
+// Anchor + @solana/web3.js reach for Node's Buffer global; Vite doesn't polyfill it.
+(globalThis as { Buffer?: typeof Buffer }).Buffer = Buffer;
+
 import { createRoot } from 'react-dom/client';
 import { Auth0Provider } from '@auth0/auth0-react';
 import App from './app/App.tsx';
