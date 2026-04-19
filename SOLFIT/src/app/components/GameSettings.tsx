@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { ChevronLeft, Settings, Timer, Dumbbell, Coins, Zap, Info, CircleDashed } from 'lucide-react';
+import { ChevronLeft, Settings, Coins, Zap, Info, CircleDashed } from 'lucide-react';
 import { useGame } from '../../context/GameContext';
 
 export default function GameSettings() {
@@ -8,33 +8,25 @@ export default function GameSettings() {
   const { room, isHost, emitSettings, emitStartGame } = useGame();
 
   const initial = room?.settings ?? { reps: 30, timeLimit: 60, entryFee: 0.1 };
-  const [reps, setReps] = useState(initial.reps);
-  const [timeLimit, setTimeLimit] = useState(initial.timeLimit);
   const [entryFee, setEntryFee] = useState(initial.entryFee);
 
   useEffect(() => {
-    if (room?.settings) {
-      setReps(room.settings.reps);
-      setTimeLimit(room.settings.timeLimit);
-      setEntryFee(room.settings.entryFee);
-    }
+    if (room?.settings) setEntryFee(room.settings.entryFee);
   }, [room?.settings]);
 
   useEffect(() => { if (!room) navigate('/'); }, [room, navigate]);
 
   const playerCount = room?.players.length ?? 1;
   const totalPot = (entryFee * playerCount * 0.95).toFixed(3);
+  const winnerShare = (entryFee * playerCount * 0.95 * 0.9).toFixed(3);
 
-  const change = (key: string, value: number) => {
-    const next = { reps, timeLimit, entryFee, [key]: value };
-    if (key === 'reps') setReps(value);
-    if (key === 'timeLimit') setTimeLimit(value);
-    if (key === 'entryFee') setEntryFee(value);
-    emitSettings(next);
+  const changeEntryFee = (value: number) => {
+    setEntryFee(value);
+    emitSettings({ ...initial, entryFee: value });
   };
 
   const handleConfirm = () => {
-    emitStartGame({ reps, timeLimit, entryFee });
+    emitStartGame({ ...initial, entryFee });
     navigate('/gameplay');
   };
 
@@ -42,7 +34,7 @@ export default function GameSettings() {
 
   return (
     <div className="min-h-full bg-[#0a0a0f] overflow-y-auto">
-      <div className="w-full max-w-[390px] md:max-w-4xl mx-auto flex flex-col p-6 md:p-10 min-h-full">
+      <div className="w-full max-w-[390px] md:max-w-3xl mx-auto flex flex-col p-6 md:p-10 min-h-full">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6 pt-4">
@@ -59,124 +51,117 @@ export default function GameSettings() {
         </div>
 
         {/* Role badge */}
-        <div className="flex items-center gap-2 mb-8 px-1">
+        <div className="flex items-center gap-2 mb-10 px-1">
           <div className={`w-2 h-2 rounded-full ${isHost ? 'bg-[#b794f6]' : 'bg-white/20'}`} />
           <span className="text-[10px] font-black text-white/30 uppercase tracking-[0.2em]">
             {isHost ? 'You are configuring — changes sync live to all players' : 'Host is configuring settings...'}
           </span>
         </div>
 
-        {/* ── Desktop: 2-col (controls | summary) ── */}
+        {/* ── Desktop: 2-col (entry fee control | summary) ── */}
         <div className="md:grid md:grid-cols-[1fr_280px] md:gap-8 space-y-8 md:space-y-0 flex-1">
 
-          {/* Left: Controls */}
+          {/* Left: Entry fee control */}
           <div className="space-y-8">
-
-            {/* Reps */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-2">
-                  <Dumbbell className="w-4 h-4 text-[#b794f6]" />
-                  <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">Target Reps</label>
-                </div>
-                <span className="text-xl font-black text-white italic">{reps}</span>
-              </div>
-              <input
-                type="range" min="10" max="100" step="5" value={reps}
-                disabled={!isHost}
-                onChange={e => change('reps', parseInt(e.target.value))}
-                className="w-full h-2 bg-white/5 rounded-full appearance-none cursor-pointer accent-[#b794f6] disabled:opacity-50"
-              />
-              <div className="flex justify-between text-[10px] font-bold text-white/10 px-1">
-                <span>10</span><span>50</span><span>100</span>
-              </div>
-            </div>
-
-            {/* Time */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-2">
-                  <Timer className="w-4 h-4 text-[#b794f6]" />
-                  <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">Time Limit</label>
-                </div>
-                <span className="text-xl font-black text-white italic">{timeLimit}s</span>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                {[30, 60, 90, 120].map(t => (
-                  <button
-                    key={t}
-                    onClick={() => isHost && change('timeLimit', t)}
-                    disabled={!isHost}
-                    className={`py-3 rounded-xl text-[10px] font-black uppercase transition-all disabled:cursor-default ${
-                      timeLimit === t
-                        ? 'bg-[#b794f6] text-white shadow-lg shadow-[#b794f6]/20'
-                        : 'bg-white/5 text-white/30 border border-white/5 hover:bg-white/10'
-                    }`}
-                  >
-                    {t}s
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Entry Fee */}
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div className="flex items-center justify-between px-1">
                 <div className="flex items-center gap-2">
                   <Coins className="w-4 h-4 text-[#b794f6]" />
                   <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">SOL Entry Fee</label>
                 </div>
-                <span className="text-xl font-black text-[#b794f6] italic">◎ {entryFee.toFixed(2)}</span>
+                <span className="text-3xl font-black text-[#b794f6] italic">◎ {entryFee.toFixed(2)}</span>
               </div>
+
+              {/* Slider */}
+              <input
+                type="range"
+                min="0.05" max="2.0" step="0.05"
+                value={entryFee}
+                disabled={!isHost}
+                onChange={e => changeEntryFee(parseFloat(e.target.value))}
+                className="w-full h-3 bg-white/5 rounded-full appearance-none cursor-pointer accent-[#b794f6] disabled:opacity-50"
+              />
+              <div className="flex justify-between text-[10px] font-bold text-white/20 px-1">
+                <span>◎ 0.05</span>
+                <span>◎ 1.00</span>
+                <span>◎ 2.00</span>
+              </div>
+
+              {/* Quick-pick buttons */}
+              <div className="grid grid-cols-4 gap-2">
+                {[0.1, 0.25, 0.5, 1.0].map(amount => (
+                  <button
+                    key={amount}
+                    onClick={() => isHost && changeEntryFee(amount)}
+                    disabled={!isHost}
+                    className={`py-3 rounded-xl text-[10px] font-black uppercase transition-all disabled:cursor-default ${
+                      entryFee === amount
+                        ? 'bg-[#b794f6] text-white shadow-lg shadow-[#b794f6]/20'
+                        : 'bg-white/5 text-white/30 border border-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    ◎ {amount}
+                  </button>
+                ))}
+              </div>
+
+              {/* +/- fine controls */}
               <div className="flex items-center gap-4">
                 <button
-                  onClick={() => isHost && change('entryFee', parseFloat(Math.max(0.05, entryFee - 0.05).toFixed(2)))}
+                  onClick={() => isHost && changeEntryFee(parseFloat(Math.max(0.05, entryFee - 0.05).toFixed(2)))}
                   disabled={!isHost}
-                  className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 text-white font-black flex items-center justify-center hover:bg-white/10 transition-all disabled:opacity-50"
-                >-</button>
-                <input
-                  type="range" min="0.05" max="2.0" step="0.05" value={entryFee}
-                  disabled={!isHost}
-                  onChange={e => change('entryFee', parseFloat(e.target.value))}
-                  className="flex-1 h-2 bg-white/5 rounded-full appearance-none cursor-pointer accent-[#b794f6] disabled:opacity-50"
-                />
+                  className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 text-white font-black flex items-center justify-center hover:bg-white/10 transition-all disabled:opacity-50 text-xl"
+                >
+                  −
+                </button>
+                <div className="flex-1 text-center">
+                  <span className="text-[10px] font-black text-white/20 uppercase tracking-widest">adjust by ◎ 0.05</span>
+                </div>
                 <button
-                  onClick={() => isHost && change('entryFee', parseFloat(Math.min(2.0, entryFee + 0.05).toFixed(2)))}
+                  onClick={() => isHost && changeEntryFee(parseFloat(Math.min(2.0, entryFee + 0.05).toFixed(2)))}
                   disabled={!isHost}
-                  className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 text-white font-black flex items-center justify-center hover:bg-white/10 transition-all disabled:opacity-50"
-                >+</button>
+                  className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 text-white font-black flex items-center justify-center hover:bg-white/10 transition-all disabled:opacity-50 text-xl"
+                >
+                  +
+                </button>
               </div>
             </div>
           </div>
 
           {/* Right: Summary + action */}
           <div className="flex flex-col gap-4">
-            {/* Summary card */}
+            {/* Prize breakdown card */}
             <div className="bg-gradient-to-br from-[#b794f6]/10 to-transparent border border-[#b794f6]/20 rounded-[28px] p-6 relative overflow-hidden flex-1">
               <div className="absolute top-0 right-0 p-4 opacity-10">
                 <Zap className="w-16 h-16 text-[#b794f6]" />
               </div>
-              <div className="relative z-10 space-y-4">
+              <div className="relative z-10 space-y-5">
                 <div>
-                  <span className="text-[9px] font-black text-[#b794f6] uppercase tracking-[0.2em] block mb-1">Estimated Total Pot</span>
+                  <span className="text-[9px] font-black text-[#b794f6] uppercase tracking-[0.2em] block mb-1">
+                    Total Prize Pool
+                  </span>
                   <div className="text-3xl font-black text-white italic tracking-tighter">◎ {totalPot}</div>
                   <div className="flex items-center gap-1.5 mt-1">
                     <Info className="w-3 h-3 text-white/20" />
                     <span className="text-[8px] font-bold text-white/20 uppercase tracking-widest">5% network fee deducted</span>
                   </div>
                 </div>
+
                 <div className="h-px bg-white/10" />
-                <div className="space-y-2">
+
+                <div className="space-y-2.5">
                   {[
                     ['Protocol', room.gameType],
-                    ['Target', `${reps} reps`],
-                    ['Duration', `${timeLimit}s`],
-                    ['Entry', `◎ ${entryFee.toFixed(2)}`],
-                    ['Squad', `${playerCount} / 6`],
+                    ['Players', `${playerCount} / 6`],
+                    ['Entry per player', `◎ ${entryFee.toFixed(2)}`],
+                    ['Total pot', `◎ ${totalPot}`],
+                    ['🥇 Winner gets', `◎ ${winnerShare}`],
                   ].map(([label, value]) => (
                     <div key={label} className="flex items-center justify-between text-xs">
                       <span className="text-white/30">{label}</span>
-                      <span className="text-white font-bold">{value}</span>
+                      <span className={`font-bold ${label === '🥇 Winner gets' ? 'text-[#b794f6]' : 'text-white'}`}>
+                        {value}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -194,7 +179,9 @@ export default function GameSettings() {
             ) : (
               <div className="w-full bg-white/5 border border-white/10 rounded-2xl py-5 px-6 flex items-center justify-center gap-3">
                 <CircleDashed className="w-4 h-4 text-white/20 animate-spin" />
-                <span className="text-white/40 font-bold uppercase italic tracking-tighter text-sm">Waiting for host...</span>
+                <span className="text-white/40 font-bold uppercase italic tracking-tighter text-sm">
+                  Waiting for host...
+                </span>
               </div>
             )}
           </div>

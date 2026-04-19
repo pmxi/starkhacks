@@ -37,6 +37,11 @@ export interface Stats {
   gamesPlayed: number;
 }
 
+export interface PendingInvite {
+  roomCode: string;
+  fromUsername: string;
+}
+
 interface GameContextType {
   // Identity — sourced from Auth0
   playerName: string;
@@ -50,6 +55,9 @@ interface GameContextType {
   isHost: boolean;
   espSocket: WebSocket | null;
   espConnected: boolean;
+  // Incoming game invite from a friend
+  pendingInvite: PendingInvite | null;
+  clearPendingInvite: () => void;
   // Stats (persisted per Auth0 user)
   stats: Stats;
   updateStats: (reps: number, solWon: number, gameType: string) => void;
@@ -90,6 +98,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const [room, setRoom] = useState<Room | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<PendingInvite | null>(null);
+  const clearPendingInvite = () => setPendingInvite(null);
   const [espSocket, setEspSocket] = useState<WebSocket | null>(null);
   const [espConnected, setEspConnected] = useState(false);
   const [stats, setStats] = useState<Stats>(() => {
@@ -127,9 +137,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setRoom(prev => prev ? { ...prev, settings } : prev);
     });
 
+    s.on('game-invite', (invite: PendingInvite) => {
+      setPendingInvite(invite);
+    });
+
     setSocket(s);
     return () => { s.disconnect(); };
   }, []);
+
+  // Register identity with server whenever socket or user changes
+  useEffect(() => {
+    if (socket && playerId !== 'guest' && playerName) {
+      socket.emit('register-user', { userId: playerId, username: playerName });
+    }
+  }, [socket, playerId, playerName]);
 
   useEffect(() => {
     if (!ESP_ID) {
@@ -245,8 +266,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   return (
     <GameContext.Provider value={{
       playerName, playerId, userEmail, userPicture,
-      room, setRoom, socket, isHost, espSocket, espConnected, stats,
-      updateStats, createRoom, joinRoom, leaveRoom,
+      room, setRoom, socket, isHost, espSocket, espConnected,
+      pendingInvite, clearPendingInvite,
+      stats, updateStats,
+      createRoom, joinRoom, leaveRoom,
       emitSettings, emitStartGame, emitRepUpdate, emitGameEnd,
       logout,
     }}>

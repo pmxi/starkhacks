@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Timer, Flame, Trophy, Zap, TrendingUp, Award } from 'lucide-react';
+import { Timer, Flame, Trophy, TrendingUp, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGame } from '../../context/GameContext';
 import { PlayerAvatar } from './PlayerAvatar';
+import WorkoutCamera from './WorkoutCamera';
 
 interface LivePlayer {
   id: string;
@@ -129,7 +130,7 @@ export default function Gameplay() {
           </div>
         </div>
 
-        {/* ── Desktop: 2-col (leaderboard | rep panel) ── */}
+        {/* ── Desktop: 2-col (leaderboard | progress + camera) ── */}
         <div className="md:grid md:grid-cols-[1fr_320px] md:gap-8 space-y-6 md:space-y-0 flex-1">
 
           {/* Left: Leaderboard */}
@@ -200,7 +201,7 @@ export default function Gameplay() {
             </div>
           </div>
 
-          {/* Right: Your progress + ESP status */}
+          {/* Right: Your progress + camera */}
           <div className="flex flex-col gap-4 md:sticky md:top-6 md:self-start">
 
             {/* Your progress */}
@@ -220,9 +221,19 @@ export default function Gameplay() {
               <p className="text-[9px] font-black text-white/20 uppercase tracking-widest mt-2">{progress.toFixed(0)}% complete</p>
             </div>
 
+            {/* Live camera — centred in the column */}
+            <div className="flex justify-center">
+              <div className="w-full max-w-[280px]">
+                <WorkoutCamera
+                  onRep={handleRep}
+                  gameEnded={gameEnded}
+                  gameType={gameType}
+                />
+              </div>
+            </div>
             {/* ESP status */}
             <div className="w-full py-8 md:py-12 rounded-2xl font-black text-xl uppercase italic tracking-tighter transition-all flex flex-col items-center justify-center gap-2 bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] text-white shadow-[0_10px_40px_rgba(183,148,246,0.4)]">
-              {espConnected ? 'ESP tracking active — your rep count is received live' : `Waiting for ${gameType} data`}
+            {espConnected ? 'ESP tracking active — your rep count is received live' : `Waiting for ${gameType} data`}
             </div>
           </div>
         </div>
