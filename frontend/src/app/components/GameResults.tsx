@@ -6,7 +6,7 @@ import { PublicKey } from '@solana/web3.js';
 import confetti from 'canvas-confetti';
 import { useGame } from '../../context/GameContext';
 import { PlayerAvatar } from './PlayerAvatar';
-import { claimPot, settleWithDevJudge } from '../../lib/contest';
+import { claimPot, settleWithJudgeServer } from '../../lib/contest';
 
 interface ResultPlayer {
   id: string;
@@ -100,7 +100,7 @@ export default function GameResults() {
           return;
         }
 
-        await settleWithDevJudge(program, contestPk, scores);
+        await settleWithJudgeServer(program, contestPk, scores);
         // @ts-expect-error
         const refreshed: any = await program.account.contest.fetch(contestPk);
         setWinnerPubkey(refreshed.winner.toBase58());

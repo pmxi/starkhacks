@@ -2,6 +2,32 @@ const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
+const nacl = require('tweetnacl');
+const bs58 = require('bs58');
+
+// ── Judge Ed25519 keypair ────────────────────────────────
+// Persisted to disk so the pubkey survives restarts (matters because
+// contests are created with a baked-in judge pubkey).
+const JUDGE_KEY_PATH = process.env.JUDGE_KEY_PATH || path.join(__dirname, 'judge.key');
+
+function loadOrCreateJudge() {
+  try {
+    const raw = fs.readFileSync(JUDGE_KEY_PATH);
+    if (raw.length === 64) return nacl.sign.keyPair.fromSecretKey(new Uint8Array(raw));
+  } catch { /* fall through */ }
+  const kp = nacl.sign.keyPair();
+  fs.writeFileSync(JUDGE_KEY_PATH, Buffer.from(kp.secretKey), { mode: 0o600 });
+  console.log(`Generated new judge keypair at ${JUDGE_KEY_PATH}`);
+  return kp;
+}
+
+const judge = loadOrCreateJudge();
+const judgePubkeyBase58 = bs58.default
+  ? bs58.default.encode(judge.publicKey)
+  : bs58.encode(judge.publicKey);
+console.log(`Judge pubkey: ${judgePubkeyBase58}`);
 
 const app = express();
 const httpServer = createServer(app);
@@ -71,6 +97,29 @@ app.get('/api/rooms/:code', (req, res) => {
 });
 
 app.get('/health', (_, res) => res.json({ ok: true, rooms: rooms.size, users: users.size }));
+
+// ── Judge endpoints ──────────────────────────────────────
+
+app.get('/api/judge-pubkey', (_req, res) => {
+  res.json({ publicKey: judgePubkeyBase58 });
+});
+
+app.post('/api/sign', (req, res) => {
+  const { messageBase64 } = req.body;
+  if (!messageBase64 || typeof messageBase64 !== 'string') {
+    return res.status(400).json({ error: 'messageBase64 required' });
+  }
+  try {
+    const msg = Buffer.from(messageBase64, 'base64');
+    const sig = nacl.sign.detached(new Uint8Array(msg), judge.secretKey);
+    res.json({
+      signatureBase64: Buffer.from(sig).toString('base64'),
+      publicKey: judgePubkeyBase58,
+    });
+  } catch (e) {
+    res.status(400).json({ error: String(e) });
+  }
+});
 
 // ── Socket.io ─────────────────────────────────────────────
 

@@ -8,7 +8,7 @@ import {
   connectPhantom,
   createContest,
   disconnectPhantom,
-  getDevJudge,
+  getJudgePubkey,
   getProgram,
   joinContest,
   type PhantomWallet,
@@ -232,7 +232,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         player: { id: playerId, name: playerName, isHost: true, isReady: true, walletPubkey },
       });
 
-      // 2. Create on-chain contest. Dev judge for now; swap to real server later.
+      // 2. Create on-chain contest. Judge pubkey comes from the server —
+      //    the same server that will sign final scores at game end.
+      const judgePubkey = await getJudgePubkey();
       const idBytes = new Uint8Array(8);
       crypto.getRandomValues(idBytes);
       const contestId = new BN(idBytes);
@@ -241,7 +243,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         wagerLamports: new BN(Math.round(opts.wagerSol * LAMPORTS_PER_SOL)),
         maxPlayers: opts.maxPlayers,
         durationSecs: opts.durationSecs,
-        judge: getDevJudge().publicKey,
+        judge: judgePubkey,
       });
       const pdaStr = contestPda.toBase58();
       socket?.emit('set-contest-pda', { code: newRoom.code, contestPda: pdaStr });

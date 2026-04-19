@@ -9,6 +9,7 @@ import type { Solfit } from "../../idl/solfit";
 import { contestPda } from "./pda";
 import { serializeScoresMessage } from "./message";
 import { getDevJudge } from "./devJudge";
+import { requestJudgeSignature } from "./judge";
 
 /**
  * Create a new contest. The `judge` param is the Ed25519 pubkey that will sign
@@ -77,6 +78,35 @@ export async function settleWithDevJudge(
     publicKey: judge.publicKey.toBytes(),
     message: msg,
     signature: sig,
+  });
+
+  return program.methods
+    .settle(scores)
+    .accounts({
+      contest,
+      instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+    })
+    .preInstructions([edIx])
+    .rpc();
+}
+
+/**
+ * Settle a contest by fetching a signature from the judge server.
+ * The server must be the one whose pubkey was baked into the contest at
+ * create_contest time — otherwise the on-chain check fails.
+ */
+export async function settleWithJudgeServer(
+  program: Program<Solfit>,
+  contest: PublicKey,
+  scores: number[],
+): Promise<string> {
+  const msg = serializeScoresMessage(contest, scores);
+  const { publicKey, signature } = await requestJudgeSignature(msg);
+
+  const edIx = Ed25519Program.createInstructionWithPublicKey({
+    publicKey: publicKey.toBytes(),
+    message: msg,
+    signature,
   });
 
   return program.methods
