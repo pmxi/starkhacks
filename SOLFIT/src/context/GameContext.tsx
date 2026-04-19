@@ -125,6 +125,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return () => { s.disconnect(); };
   }, []);
 
+  // Register identity with server whenever socket or user changes
+  useEffect(() => {
+    if (socket && playerId !== 'guest' && playerName) {
+      socket.emit('register-user', { userId: playerId, username: playerName });
+    }
+  }, [socket, playerId, playerName]);
+
   const updateStats = useCallback((reps: number, solWon: number, gameType: string) => {
     setStats(prev => {
       const recordKey = (gameType.toLowerCase() + 'Record') as keyof Stats;

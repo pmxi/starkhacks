@@ -12,11 +12,20 @@ const io = new Server(httpServer, {
 app.use(cors());
 app.use(express.json());
 
-// In-memory room store: code -> Room
-const rooms = new Map();
+// In-memory stores
+const rooms = new Map();      // code -> Room
+const users = new Map();      // userId -> { username }  (persists for session)
+const friendships = new Map(); // userId -> Set of friendIds
 
 function generateCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+function friendsOf(userId) {
+  return [...(friendships.get(userId) ?? [])].map(fid => {
+    const info = users.get(fid);
+    return info ? { id: fid, username: info.username } : null;
+  }).filter(Boolean);
 }
 
 function calculatePrizes(players, entryFee) {
@@ -27,7 +36,8 @@ function calculatePrizes(players, entryFee) {
   }));
 }
 
-// REST: Create room
+// ── REST ──────────────────────────────────────────────────
+
 app.post('/api/rooms', (req, res) => {
   const { teamName, gameType, playerName, playerId } = req.body;
   if (!teamName || !gameType || !playerName || !playerId) {
@@ -38,10 +48,7 @@ app.post('/api/rooms', (req, res) => {
   do { code = generateCode(); } while (rooms.has(code));
 
   const room = {
-    code,
-    teamName,
-    gameType,
-    hostId: playerId,
+    code, teamName, gameType, hostId: playerId,
     players: [{ id: playerId, name: playerName, isHost: true, isReady: true }],
     settings: { reps: 30, timeLimit: 60, entryFee: 0.1 },
     status: 'lobby',
@@ -49,14 +56,10 @@ app.post('/api/rooms', (req, res) => {
   };
 
   rooms.set(code, room);
-
-  // Auto-cleanup after 2 hours
   setTimeout(() => rooms.delete(code), 2 * 60 * 60 * 1000);
-
   res.json({ code, room });
 });
 
-// REST: Get room by code
 app.get('/api/rooms/:code', (req, res) => {
   const room = rooms.get(req.params.code.toUpperCase());
   if (!room) return res.status(404).json({ error: 'Room not found' });
@@ -66,23 +69,76 @@ app.get('/api/rooms/:code', (req, res) => {
   res.json(room);
 });
 
-// Health check
-app.get('/health', (_, res) => res.json({ ok: true, rooms: rooms.size }));
+app.get('/health', (_, res) => res.json({ ok: true, rooms: rooms.size, users: users.size }));
 
-// Socket.io
+// ── Socket.io ─────────────────────────────────────────────
+
 io.on('connection', (socket) => {
   let currentRoom = null;
   let currentPlayerId = null;
+
+  // ── Identity registration ──
+
+  socket.on('register-user', ({ userId, username }) => {
+    currentPlayerId = userId;
+    users.set(userId, { username });
+    if (!friendships.has(userId)) friendships.set(userId, new Set());
+  });
+
+  // ── Friend system ──
+
+  socket.on('get-friends', ({ userId }) => {
+    socket.emit('friends-data', { friends: friendsOf(userId) });
+  });
+
+  // Direct-add: looks up by username, adds mutually if found
+  socket.on('add-friend', ({ fromId, toUsername }) => {
+    let targetId = null;
+    for (const [uid, info] of users) {
+      if (info.username.toLowerCase() === toUsername.trim().toLowerCase()) {
+        targetId = uid;
+        break;
+      }
+    }
+
+    if (!targetId) {
+      socket.emit('add-friend-result', { ok: false, message: `No user found with username "${toUsername}". They must have logged in at least once.` });
+      return;
+    }
+    if (targetId === fromId) {
+      socket.emit('add-friend-result', { ok: false, message: "You can't add yourself." });
+      return;
+    }
+    if (friendships.get(fromId)?.has(targetId)) {
+      socket.emit('add-friend-result', { ok: false, message: 'Already friends.' });
+      return;
+    }
+
+    // Mutual add
+    if (!friendships.has(fromId)) friendships.set(fromId, new Set());
+    if (!friendships.has(targetId)) friendships.set(targetId, new Set());
+    friendships.get(fromId).add(targetId);
+    friendships.get(targetId).add(fromId);
+
+    socket.emit('add-friend-result', { ok: true, message: `${users.get(targetId).username} added!` });
+    socket.emit('friends-data', { friends: friendsOf(fromId) });
+  });
+
+  socket.on('remove-friend', ({ userId, friendId }) => {
+    friendships.get(userId)?.delete(friendId);
+    friendships.get(friendId)?.delete(userId);
+    socket.emit('friends-data', { friends: friendsOf(userId) });
+  });
+
+  // ── Game room events ──
 
   socket.on('join-room', ({ code, player }) => {
     const room = rooms.get(code);
     if (!room) { socket.emit('error', { message: 'Room not found' }); return; }
 
     currentRoom = code;
-    currentPlayerId = player.id;
     socket.join(code);
 
-    // Add player if not already present
     if (!room.players.find(p => p.id === player.id)) {
       if (room.players.length >= 6) {
         socket.emit('error', { message: 'Room is full' });
@@ -120,7 +176,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('rep-update', ({ code, playerId, count }) => {
-    // Broadcast to everyone else in the room
     socket.to(code).emit('rep-update', { playerId, count });
   });
 
@@ -140,8 +195,7 @@ io.on('connection', (socket) => {
     if (room.players.length === 0) {
       rooms.delete(code);
     } else {
-      // Transfer host if host left
-      if (room.hostId === playerId && room.players.length > 0) {
+      if (room.hostId === playerId) {
         room.players[0].isHost = true;
         room.hostId = room.players[0].id;
       }
