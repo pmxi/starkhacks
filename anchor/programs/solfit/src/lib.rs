@@ -175,39 +175,45 @@ fn verify_ed25519_judge(
     expected_pubkey: &Pubkey,
     expected_message: &[u8],
 ) -> Result<()> {
-    let ix = load_instruction_at_checked(0, ix_sysvar)
-        .map_err(|_| error!(SolfitError::BadJudgeSignature))?;
-    require_keys_eq!(
-        ix.program_id,
-        ED25519_PROGRAM_ID,
-        SolfitError::BadJudgeSignature
-    );
+    // Scan for the Ed25519 precompile ix at any index — wallets (e.g. Phantom)
+    // commonly inject ComputeBudget ixs ahead of the app payload, so index 0
+    // can't be trusted to hold our verification ix.
+    let mut message_seen = false;
+    for i in 0u16..16 {
+        let ix = match load_instruction_at_checked(i as usize, ix_sysvar) {
+            Ok(ix) => ix,
+            Err(_) => break,
+        };
+        if ix.program_id != ED25519_PROGRAM_ID {
+            continue;
+        }
 
-    let data = &ix.data;
-    require!(data.len() >= 16, SolfitError::BadJudgeSignature);
-    require!(data[0] == 1, SolfitError::BadJudgeSignature);
+        let data = &ix.data;
+        if data.len() < 16 || data[0] != 1 {
+            continue;
+        }
+        let pubkey_offset = u16::from_le_bytes([data[6], data[7]]) as usize;
+        let msg_offset = u16::from_le_bytes([data[10], data[11]]) as usize;
+        let msg_size = u16::from_le_bytes([data[12], data[13]]) as usize;
 
-    let pubkey_offset = u16::from_le_bytes([data[6], data[7]]) as usize;
-    let msg_offset = u16::from_le_bytes([data[10], data[11]]) as usize;
-    let msg_size = u16::from_le_bytes([data[12], data[13]]) as usize;
-
-    require!(
-        data.len() >= pubkey_offset + 32 && data.len() >= msg_offset + msg_size,
-        SolfitError::BadJudgeSignature
-    );
-
-    let signed_pubkey = &data[pubkey_offset..pubkey_offset + 32];
-    require!(
-        signed_pubkey == expected_pubkey.as_ref(),
-        SolfitError::BadJudgeSignature
-    );
-
-    let signed_message = &data[msg_offset..msg_offset + msg_size];
-    require!(
-        signed_message == expected_message,
-        SolfitError::MessageMismatch
-    );
-    Ok(())
+        if data.len() < pubkey_offset + 32 || data.len() < msg_offset + msg_size {
+            continue;
+        }
+        let signed_pubkey = &data[pubkey_offset..pubkey_offset + 32];
+        if signed_pubkey != expected_pubkey.as_ref() {
+            continue;
+        }
+        let signed_message = &data[msg_offset..msg_offset + msg_size];
+        if signed_message == expected_message {
+            return Ok(());
+        }
+        message_seen = true;
+    }
+    if message_seen {
+        Err(error!(SolfitError::MessageMismatch))
+    } else {
+        Err(error!(SolfitError::BadJudgeSignature))
+    }
 }
 
 #[derive(Accounts)]
