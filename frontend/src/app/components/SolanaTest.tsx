@@ -33,6 +33,7 @@ export default function SolanaTest() {
   const [contestAddr, setContestAddr] = useState("");
   const [contestData, setContestData] = useState<ContestData | null>(null);
   const [log, setLog] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const append = useCallback((msg: string) => {
@@ -78,13 +79,17 @@ export default function SolanaTest() {
   }
 
   async function handleCreate() {
-    if (!program || !wallet) return;
+    if (!program || !wallet || busy) return;
     const durationSecs = Number(prompt("Duration (seconds)?", "30") ?? "30");
     const maxPlayers = Number(prompt("Max players (2-8)?", "2") ?? "2");
     const wagerSol = Number(prompt("Wager (SOL)?", "0.01") ?? "0.01");
+    setBusy(true);
     try {
       const judgePk = getDevJudge().publicKey;
-      const contestId = new BN(Date.now());
+      // 8 random bytes → unique contest_id, avoids ms-level collisions if you double-click.
+      const idBytes = new Uint8Array(8);
+      crypto.getRandomValues(idBytes);
+      const contestId = new BN(idBytes);
       append(`creating contest (duration=${durationSecs}s, max=${maxPlayers}, wager=${wagerSol} SOL)...`);
       const { signature, contestPda } = await createContest(program, {
         contestId,
@@ -98,22 +103,27 @@ export default function SolanaTest() {
       await refresh(contestPda.toBase58());
     } catch (e: any) {
       append(`create failed: ${e.message ?? e}`);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleJoin() {
-    if (!program || !contestAddr) return;
+    if (!program || !contestAddr || busy) return;
+    setBusy(true);
     try {
       const sig = await joinContest(program, new PublicKey(contestAddr));
       append(`joined  sig=${sig.slice(0, 12)}…`);
       await refresh();
     } catch (e: any) {
       append(`join failed: ${e.message ?? e}`);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleSettle() {
-    if (!program || !contestData || !contestAddr) return;
+    if (!program || !contestData || !contestAddr || busy) return;
     const defaultScores = contestData.players.map(() => 0).join(",");
     const raw = prompt(
       `Scores (comma-separated, ${contestData.players.length} values)?`,
@@ -125,6 +135,7 @@ export default function SolanaTest() {
       append(`bad scores input: ${raw}`);
       return;
     }
+    setBusy(true);
     try {
       const sig = await settleWithDevJudge(
         program,
@@ -135,11 +146,14 @@ export default function SolanaTest() {
       await refresh();
     } catch (e: any) {
       append(`settle failed: ${e.message ?? e}`);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleClaim() {
-    if (!program || !contestAddr) return;
+    if (!program || !contestAddr || busy) return;
+    setBusy(true);
     try {
       const sig = await claimPot(program, new PublicKey(contestAddr));
       append(`claimed  sig=${sig.slice(0, 12)}…`);
@@ -147,6 +161,8 @@ export default function SolanaTest() {
       setContestAddr("");
     } catch (e: any) {
       append(`claim failed: ${e.message ?? e}`);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -183,7 +199,9 @@ export default function SolanaTest() {
       </section>
 
       <section style={section}>
-        <button onClick={handleCreate} disabled={!canStart} style={btn}>Create contest</button>
+        <button onClick={handleCreate} disabled={!canStart || busy} style={btn}>
+          {busy ? "…" : "Create contest"}
+        </button>
         <input
           type="text"
           placeholder="contest PDA"
@@ -192,7 +210,13 @@ export default function SolanaTest() {
           style={input}
         />
         <button onClick={() => refresh()} disabled={!canStart} style={btn}>Load</button>
-        <button onClick={handleJoin} disabled={!canStart || !contestData || contestData.status !== 0} style={btn}>Join</button>
+        <button
+          onClick={handleJoin}
+          disabled={!canStart || !contestData || contestData.status !== 0 || busy}
+          style={btn}
+        >
+          {busy ? "…" : "Join"}
+        </button>
       </section>
 
       {contestData && (
@@ -217,17 +241,17 @@ export default function SolanaTest() {
           <div style={{ marginTop: 12 }}>
             <button
               onClick={handleSettle}
-              disabled={contestData.status !== 1 || secsLeft > 0}
+              disabled={contestData.status !== 1 || secsLeft > 0 || busy}
               style={btn}
             >
-              Settle (dev judge)
+              {busy ? "…" : "Settle (dev judge)"}
             </button>
             <button
               onClick={handleClaim}
-              disabled={contestData.status !== 2 || !iAmWinner}
+              disabled={contestData.status !== 2 || !iAmWinner || busy}
               style={btn}
             >
-              Claim pot
+              {busy ? "…" : "Claim pot"}
             </button>
           </div>
         </section>
