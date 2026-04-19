@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router';
-import { Timer, Flame, Trophy, Zap, TrendingUp, Award, Plus } from 'lucide-react';
+import { Timer, Flame, Trophy, Zap, TrendingUp, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGame } from '../../context/GameContext';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -14,7 +14,7 @@ interface LivePlayer {
 
 export default function Gameplay() {
   const navigate = useNavigate();
-  const { room, socket, playerId, emitRepUpdate, emitGameEnd } = useGame();
+  const { room, socket, playerId, emitRepUpdate, emitGameEnd, espSocket, espConnected } = useGame();
 
   const settings = room?.settings ?? { reps: 30, timeLimit: 60, entryFee: 0.1 };
   const gameType = room?.gameType ?? 'Pushup';
@@ -24,7 +24,6 @@ export default function Gameplay() {
     (room?.players ?? []).map(p => ({ id: p.id, name: p.name, count: 0, isYou: p.id === playerId }))
   );
   const [gameEnded, setGameEnded] = useState(false);
-  const [repFlash, setRepFlash] = useState(false);
 
   const gameEndedRef = useRef(false);
   const playersRef = useRef(players);
@@ -37,12 +36,35 @@ export default function Gameplay() {
     if (!socket) return;
     const handler = ({ playerId: pid, count }: { playerId: string; count: number }) => {
       setPlayers(prev => prev.map(p =>
-        p.id === pid && !p.isYou ? { ...p, count: Math.max(p.count, count) } : p
+        p.id === pid ? { ...p, count: Math.max(p.count, count) } : p
       ));
     };
     socket.on('rep-update', handler);
     return () => { socket.off('rep-update', handler); };
   }, [socket]);
+
+  useEffect(() => {
+    if (!espSocket || !playerId) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        const count = typeof data.reps === 'number' ? data.reps : typeof data.count === 'number' ? data.count : null;
+        if (count === null) return;
+
+        const previousCount = playersRef.current.find(p => p.id === playerId)?.count ?? 0;
+        if (count <= previousCount) return;
+
+        setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, count } : p));
+        emitRepUpdate(count);
+      } catch {
+        // ignore malformed ESP payloads
+      }
+    };
+
+    espSocket.addEventListener('message', handleMessage);
+    return () => espSocket.removeEventListener('message', handleMessage);
+  }, [espSocket, emitRepUpdate, playerId]);
 
   // Simulated AI progress for non-self players
   useEffect(() => {
@@ -74,18 +96,6 @@ export default function Gameplay() {
       navigate('/results', { state: { results: sorted, gameType, entryFee: settings.entryFee, playerCount: sorted.length } });
     }
   }, [timeLeft, gameEnded, emitGameEnd, navigate, gameType, settings.entryFee]);
-
-  const handleRep = useCallback(() => {
-    if (gameEnded) return;
-    setPlayers(prev => prev.map(p => {
-      if (!p.isYou) return p;
-      const newCount = p.count + 1;
-      emitRepUpdate(newCount);
-      return { ...p, count: newCount };
-    }));
-    setRepFlash(true);
-    setTimeout(() => setRepFlash(false), 120);
-  }, [gameEnded, emitRepUpdate]);
 
   const sortedPlayers = [...players].sort((a, b) => b.count - a.count);
   const leaderId = sortedPlayers[0]?.count > 0 ? sortedPlayers[0]?.id : null;
@@ -190,7 +200,7 @@ export default function Gameplay() {
             </div>
           </div>
 
-          {/* Right: Your progress + rep button */}
+          {/* Right: Your progress + ESP status */}
           <div className="flex flex-col gap-4 md:sticky md:top-6 md:self-start">
 
             {/* Your progress */}
@@ -210,27 +220,9 @@ export default function Gameplay() {
               <p className="text-[9px] font-black text-white/20 uppercase tracking-widest mt-2">{progress.toFixed(0)}% complete</p>
             </div>
 
-            {/* Rep button */}
-            <motion.button
-              whileTap={{ scale: 0.94 }}
-              onClick={handleRep}
-              disabled={gameEnded}
-              className={`w-full py-8 md:py-12 rounded-2xl font-black text-xl uppercase italic tracking-tighter transition-all flex flex-col items-center justify-center gap-2 ${
-                repFlash
-                  ? 'bg-white text-[#8b5cf6] shadow-[0_0_60px_rgba(255,255,255,0.3)]'
-                  : 'bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] text-white shadow-[0_10px_40px_rgba(183,148,246,0.4)]'
-              } disabled:opacity-40`}
-            >
-              <Plus className="w-8 h-8" />
-              Tap for {gameType}
-            </motion.button>
-
-            {/* AI status */}
-            <div className="flex items-center justify-center gap-2">
-              <Zap className="w-3 h-3 text-[#b794f6]" />
-              <span className="text-[8px] font-bold text-white/20 uppercase tracking-widest text-center">
-                AI tracking active — each tap = 1 verified rep
-              </span>
+            {/* ESP status */}
+            <div className="w-full py-8 md:py-12 rounded-2xl font-black text-xl uppercase italic tracking-tighter transition-all flex flex-col items-center justify-center gap-2 bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] text-white shadow-[0_10px_40px_rgba(183,148,246,0.4)]">
+              {espConnected ? 'ESP tracking active — your rep count is received live' : `Waiting for ${gameType} data`}
             </div>
           </div>
         </div>

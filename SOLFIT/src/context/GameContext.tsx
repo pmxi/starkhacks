@@ -3,6 +3,7 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { io, Socket } from 'socket.io-client';
 
 const SERVER_URL = 'http://localhost:3001';
+const ESP_ID = import.meta.env.VITE_ESP_ID as string | undefined;
 
 export interface Player {
   id: string;
@@ -47,6 +48,8 @@ interface GameContextType {
   setRoom: (room: Room | null) => void;
   socket: Socket | null;
   isHost: boolean;
+  espSocket: WebSocket | null;
+  espConnected: boolean;
   // Stats (persisted per Auth0 user)
   stats: Stats;
   updateStats: (reps: number, solWon: number, gameType: string) => void;
@@ -87,6 +90,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const [room, setRoom] = useState<Room | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [espSocket, setEspSocket] = useState<WebSocket | null>(null);
+  const [espConnected, setEspConnected] = useState(false);
   const [stats, setStats] = useState<Stats>(() => {
     try {
       const stored = localStorage.getItem(statsKey);
@@ -98,6 +103,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const roomRef = useRef<Room | null>(room);
   roomRef.current = room;
+  const espSocketRef = useRef<WebSocket | null>(null);
 
   // Reload stats if user changes (different player logs in)
   useEffect(() => {
@@ -124,6 +130,29 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setSocket(s);
     return () => { s.disconnect(); };
   }, []);
+
+  useEffect(() => {
+    if (!ESP_ID) {
+      setEspSocket(null);
+      setEspConnected(false);
+      return;
+    }
+
+    const ws = new WebSocket(`ws://${ESP_ID}/ws`);
+    espSocketRef.current = ws;
+    setEspSocket(ws);
+
+    ws.addEventListener('open', () => setEspConnected(true));
+    ws.addEventListener('close', () => setEspConnected(false));
+    ws.addEventListener('error', () => setEspConnected(false));
+
+    return () => {
+      ws.close();
+      setEspConnected(false);
+      setEspSocket(null);
+      espSocketRef.current = null;
+    };
+  }, [ESP_ID]);
 
   const updateStats = useCallback((reps: number, solWon: number, gameType: string) => {
     setStats(prev => {
@@ -189,7 +218,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const emitStartGame = useCallback((settings: GameSettings) => {
     const r = roomRef.current;
-    if (r && socket) socket.emit('start-game', { code: r.code, settings });
+    if (!r || !socket) return;
+    if (espSocketRef.current?.readyState === WebSocket.OPEN) {
+      espSocketRef.current.send('RESET');
+    }
+    socket.emit('start-game', { code: r.code, settings });
   }, [socket]);
 
   const emitRepUpdate = useCallback((count: number) => {
@@ -212,7 +245,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   return (
     <GameContext.Provider value={{
       playerName, playerId, userEmail, userPicture,
-      room, setRoom, socket, isHost, stats,
+      room, setRoom, socket, isHost, espSocket, espConnected, stats,
       updateStats, createRoom, joinRoom, leaveRoom,
       emitSettings, emitStartGame, emitRepUpdate, emitGameEnd,
       logout,
