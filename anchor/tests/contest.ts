@@ -111,7 +111,7 @@ describe("contest", () => {
     await new Promise((r) => setTimeout(r, (durationSecs + 1) * 1000));
   }
 
-  it("happy path: create → join → settle → claim", async () => {
+  it("happy path: settle pays winner and closes PDA atomically", async () => {
     const { contestPda, players } = await setupContest({
       duration: 2,
       maxPlayers: 2,
@@ -125,40 +125,30 @@ describe("contest", () => {
     const sig = signAsJudge(msg);
     const edIx = buildEd25519Ix(judge.publicKey, msg, sig);
 
+    const balBefore = await provider.connection.getBalance(players[0].publicKey);
     await program.methods
       .settle(scores)
       .accounts({
         contest: contestPda,
+        winner: players[0].publicKey,
         instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
       })
       .preInstructions([edIx])
       .rpc();
 
-    const c = await program.account.contest.fetch(contestPda);
-    assert.deepEqual(c.finalScores, scores);
-    assert.equal(c.status, 2); // Settled
-    assert.equal(
-      c.winner.toBase58(),
-      players[0].publicKey.toBase58(),
-      "player 0 should win with 5 vs 3",
-    );
-
-    const balBefore = await provider.connection.getBalance(players[0].publicKey);
-    await program.methods
-      .claimPot()
-      .accounts({ contest: contestPda, winner: players[0].publicKey })
-      .signers([players[0]])
-      .rpc();
     const balAfter = await provider.connection.getBalance(players[0].publicKey);
     assert.isAbove(
       balAfter - balBefore,
       0.15 * LAMPORTS_PER_SOL,
-      "winner should net roughly 2x wager minus fees",
+      "winner should net ~2x wager after settle (no separate claim)",
     );
+
+    const pdaInfo = await provider.connection.getAccountInfo(contestPda);
+    assert.isNull(pdaInfo, "PDA should be closed after settle");
   });
 
   it("settle before deadline fails", async () => {
-    const { contestPda } = await setupContest({
+    const { contestPda, players } = await setupContest({
       duration: 60, // 1 min — will still be Active
       maxPlayers: 2,
       wagerSol: 0.01,
@@ -173,6 +163,7 @@ describe("contest", () => {
         .settle(scores)
         .accounts({
           contest: contestPda,
+          winner: players[0].publicKey,
           instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
         })
         .preInstructions([edIx])
@@ -184,7 +175,7 @@ describe("contest", () => {
   });
 
   it("settle with wrong-judge signature fails", async () => {
-    const { contestPda } = await setupContest({
+    const { contestPda, players } = await setupContest({
       duration: 2,
       maxPlayers: 2,
       wagerSol: 0.01,
@@ -203,6 +194,7 @@ describe("contest", () => {
         .settle(scores)
         .accounts({
           contest: contestPda,
+          winner: players[1].publicKey,
           instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
         })
         .preInstructions([edIx])
@@ -210,6 +202,34 @@ describe("contest", () => {
       assert.fail("expected BadJudgeSignature");
     } catch (e: any) {
       assert.include(e.toString(), "BadJudgeSignature");
+    }
+  });
+
+  it("wrong winner account is rejected", async () => {
+    const { contestPda, players } = await setupContest({
+      duration: 2,
+      maxPlayers: 2,
+      wagerSol: 0.01,
+    });
+    await waitForDeadline(2);
+
+    const scores = [8, 2]; // player 0 wins
+    const msg = buildScoresMessage(contestPda, scores);
+    const edIx = buildEd25519Ix(judge.publicKey, msg, signAsJudge(msg));
+
+    try {
+      await program.methods
+        .settle(scores)
+        .accounts({
+          contest: contestPda,
+          winner: players[1].publicKey, // lying — player 0 should win
+          instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+        })
+        .preInstructions([edIx])
+        .rpc();
+      assert.fail("expected NotWinner");
+    } catch (e: any) {
+      assert.include(e.toString(), "NotWinner");
     }
   });
 
@@ -225,25 +245,28 @@ describe("contest", () => {
     const msg = buildScoresMessage(contestPda, scores);
     const edIx = buildEd25519Ix(judge.publicKey, msg, signAsJudge(msg));
 
+    const balBefore = await provider.connection.getBalance(players[0].publicKey);
     await program.methods
       .settle(scores)
       .accounts({
         contest: contestPda,
+        winner: players[0].publicKey,
         instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
       })
       .preInstructions([edIx])
       .rpc();
-
-    const c = await program.account.contest.fetch(contestPda);
-    assert.equal(
-      c.winner.toBase58(),
-      players[0].publicKey.toBase58(),
-      "lowest index should win the tie",
+    const balAfter = await provider.connection.getBalance(players[0].publicKey);
+    assert.isAbove(
+      balAfter - balBefore,
+      0.02 * LAMPORTS_PER_SOL,
+      "lowest-index player should receive the 3x wager pot on tie",
     );
+    const pdaInfo = await provider.connection.getAccountInfo(contestPda);
+    assert.isNull(pdaInfo, "PDA should be closed after settle");
   });
 
-  it("double-settle fails", async () => {
-    const { contestPda } = await setupContest({
+  it("double-settle fails (PDA closed by first settle)", async () => {
+    const { contestPda, players } = await setupContest({
       duration: 2,
       maxPlayers: 2,
       wagerSol: 0.01,
@@ -258,6 +281,7 @@ describe("contest", () => {
       .settle(scores)
       .accounts({
         contest: contestPda,
+        winner: players[0].publicKey,
         instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
       })
       .preInstructions([edIx])
@@ -268,13 +292,21 @@ describe("contest", () => {
         .settle(scores)
         .accounts({
           contest: contestPda,
+          winner: players[0].publicKey,
           instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
         })
         .preInstructions([edIx])
         .rpc();
-      assert.fail("expected NotActive");
+      assert.fail("expected second settle to fail (account closed)");
     } catch (e: any) {
-      assert.include(e.toString(), "NotActive");
+      const msg = e.toString();
+      assert.ok(
+        msg.includes("does not exist") ||
+          msg.includes("AccountDiscriminatorMismatch") ||
+          msg.includes("AccountNotInitialized") ||
+          msg.includes("owned by the wrong program"),
+        `expected account-closed error, got: ${msg}`,
+      );
     }
   });
 

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BN } from "@coral-xyz/anchor";
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import {
-  claimPot,
   connectPhantom,
   createContest,
   getDevJudge,
@@ -161,14 +160,23 @@ export default function SolanaTest() {
       append(`bad scores input: ${raw}`);
       return;
     }
+    // Compute winner from scores locally (matches program's argmax + lowest-index tiebreak).
+    let winnerIdx = 0;
+    for (let i = 1; i < scores.length; i++) {
+      if (scores[i] > scores[winnerIdx]) winnerIdx = i;
+    }
+    const winnerPk = contestData.players[winnerIdx];
+
     setBusy(true);
     try {
       const sig = await settleWithDevJudge(
         program,
         new PublicKey(contestAddr),
         scores,
+        winnerPk,
       );
-      append(`settled  sig=${sig.slice(0, 12)}…`);
+      append(`settled — paid to ${winnerPk.toBase58().slice(0, 12)}…  sig=${sig.slice(0, 12)}…`);
+      // settle also closes the PDA; polling will see "Account does not exist" and clear.
       await refresh();
     } catch (e: any) {
       if (isAlreadyProcessed(e)) {
@@ -182,35 +190,10 @@ export default function SolanaTest() {
     }
   }
 
-  async function handleClaim() {
-    if (!program || !contestAddr || busy) return;
-    setBusy(true);
-    try {
-      const sig = await claimPot(program, new PublicKey(contestAddr));
-      append(`claimed  sig=${sig.slice(0, 12)}…`);
-      setContestData(null);
-      setContestAddr("");
-      stopPolling();
-    } catch (e: any) {
-      if (isAlreadyProcessed(e)) {
-        append(`claimed (tx retried; first send landed)`);
-        setContestData(null);
-        setContestAddr("");
-        stopPolling();
-      } else {
-        append(`claim failed: ${e.message ?? e}`);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const now = Math.floor(Date.now() / 1000);
   const deadline = contestData?.deadline.toNumber() ?? 0;
   const secsLeft = Math.max(0, deadline - now);
   const me = wallet?.publicKey.toBase58();
-  const iAmWinner =
-    contestData?.winner && contestData.winner.toBase58() === me;
   const canStart = !!program;
   const statusLabel = contestData ? STATUS_LABELS[contestData.status] : "—";
 
@@ -283,14 +266,7 @@ export default function SolanaTest() {
               disabled={contestData.status !== 1 || secsLeft > 0 || busy}
               style={btn}
             >
-              {busy ? "…" : "Settle (dev judge)"}
-            </button>
-            <button
-              onClick={handleClaim}
-              disabled={contestData.status !== 2 || !iAmWinner || busy}
-              style={btn}
-            >
-              {busy ? "…" : "Claim pot"}
+              {busy ? "…" : "Settle (dev judge, pays winner)"}
             </button>
           </div>
         </section>

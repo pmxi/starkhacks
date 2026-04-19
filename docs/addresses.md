@@ -14,3 +14,6 @@ Devnet deploy — settlement-only rewrite
   Upgrade slot: 456545937 (2026-04-19)
   IDL account: 89wNJHmcDD892dvtE4eD5Qw8BgRd7GsWMmNoX8TbN2bE
   Tx: 46rM6EUqt22bGwLS5tzSL9AZbffR14zXiyaAHFszXTXRuUoknWWvx1J5jEPcebtzXfS3GfT8ywVdFx9L3hQiVTcX
+
+Devnet upgrade — fold claim_pot into settle (2026-04-19)
+  settle now pays the winner and closes the PDA atomically. No separate claim tx.

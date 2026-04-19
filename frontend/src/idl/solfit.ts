@@ -14,31 +14,6 @@ export type Solfit = {
   },
   "instructions": [
     {
-      "name": "claimPot",
-      "discriminator": [
-        210,
-        85,
-        35,
-        217,
-        204,
-        65,
-        38,
-        17
-      ],
-      "accounts": [
-        {
-          "name": "contest",
-          "writable": true
-        },
-        {
-          "name": "winner",
-          "writable": true,
-          "signer": true
-        }
-      ],
-      "args": []
-    },
-    {
       "name": "createContest",
       "discriminator": [
         129,
@@ -179,6 +154,10 @@ export type Solfit = {
           "writable": true
         },
         {
+          "name": "winner",
+          "writable": true
+        },
+        {
           "name": "instructions",
           "address": "Sysvar1nstructions1111111111111111111111111"
         }
@@ -271,13 +250,13 @@ export type Solfit = {
     },
     {
       "code": 6007,
-      "name": "notSettled",
-      "msg": "contest is not Settled"
+      "name": "notWinner",
+      "msg": "winner account does not match the on-chain-computed winner"
     },
     {
       "code": 6008,
-      "name": "notWinner",
-      "msg": "signer is not the winner"
+      "name": "mathOverflow",
+      "msg": "arithmetic overflow"
     },
     {
       "code": 6009,

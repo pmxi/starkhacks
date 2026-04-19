@@ -69,6 +69,7 @@ export async function settleWithDevJudge(
   program: Program<Solfit>,
   contest: PublicKey,
   scores: number[],
+  winner: PublicKey,
 ): Promise<string> {
   const judge = getDevJudge();
   const msg = serializeScoresMessage(contest, scores);
@@ -84,6 +85,7 @@ export async function settleWithDevJudge(
     .settle(scores)
     .accounts({
       contest,
+      winner,
       instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
     })
     .preInstructions([edIx])
@@ -94,11 +96,19 @@ export async function settleWithDevJudge(
  * Settle a contest by fetching a signature from the judge server.
  * The server must be the one whose pubkey was baked into the contest at
  * create_contest time — otherwise the on-chain check fails.
+ *
+ * Caller must also pass the expected `winner` pubkey (argmax of `scores`
+ * on `contest.players`). The program re-computes argmax and rejects if
+ * the caller lied.
+ *
+ * On success, the pot is transferred to `winner` and the contest PDA is
+ * closed in the same tx — no separate claim step.
  */
 export async function settleWithJudgeServer(
   program: Program<Solfit>,
   contest: PublicKey,
   scores: number[],
+  winner: PublicKey,
 ): Promise<string> {
   const msg = serializeScoresMessage(contest, scores);
   const { publicKey, signature } = await requestJudgeSignature(msg);
@@ -113,21 +123,9 @@ export async function settleWithJudgeServer(
     .settle(scores)
     .accounts({
       contest,
+      winner,
       instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
     })
     .preInstructions([edIx])
-    .rpc();
-}
-
-export async function claimPot(
-  program: Program<Solfit>,
-  contest: PublicKey,
-): Promise<string> {
-  return program.methods
-    .claimPot()
-    .accounts({
-      contest,
-      winner: program.provider.publicKey!,
-    })
     .rpc();
 }

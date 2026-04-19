@@ -109,14 +109,26 @@ pub mod solfit {
             }
         }
 
-        let c = &mut ctx.accounts.contest;
-        c.winner = c.players[winner_idx];
-        c.final_scores = scores;
-        c.status = ContestStatus::Settled as u8;
-        Ok(())
-    }
+        // Winner account must match what we computed on-chain — caller can't lie.
+        let expected_winner = ctx.accounts.contest.players[winner_idx];
+        require_keys_eq!(
+            ctx.accounts.winner.key(),
+            expected_winner,
+            SolfitError::NotWinner
+        );
 
-    pub fn claim_pot(_ctx: Context<ClaimPot>) -> Result<()> {
+        // Pay out + close PDA in the same tx. No second "claim" step.
+        let contest_info = ctx.accounts.contest.to_account_info();
+        let remaining = contest_info.lamports();
+        **ctx.accounts.winner.try_borrow_mut_lamports()? = ctx
+            .accounts
+            .winner
+            .lamports()
+            .checked_add(remaining)
+            .ok_or(SolfitError::MathOverflow)?;
+        **contest_info.try_borrow_mut_lamports()? = 0;
+        contest_info.assign(&system_program::ID);
+        contest_info.resize(0)?;
         Ok(())
     }
 
@@ -248,22 +260,12 @@ pub struct JoinContest<'info> {
 pub struct Settle<'info> {
     #[account(mut)]
     pub contest: Account<'info, Contest>,
+    /// CHECK: asserted in settle() to equal contest.players[winner_idx] (argmax of scores).
+    #[account(mut)]
+    pub winner: AccountInfo<'info>,
     /// CHECK: Instructions sysvar — introspected to verify the preceding Ed25519 precompile ix.
     #[account(address = anchor_lang::solana_program::sysvar::instructions::ID)]
     pub instructions: AccountInfo<'info>,
-}
-
-#[derive(Accounts)]
-pub struct ClaimPot<'info> {
-    #[account(
-        mut,
-        constraint = contest.status == ContestStatus::Settled as u8 @ SolfitError::NotSettled,
-        constraint = contest.winner == winner.key() @ SolfitError::NotWinner,
-        close = winner,
-    )]
-    pub contest: Account<'info, Contest>,
-    #[account(mut)]
-    pub winner: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -321,10 +323,10 @@ pub enum SolfitError {
     NotActive,
     #[msg("deadline has not passed yet")]
     DeadlineNotPassed,
-    #[msg("contest is not Settled")]
-    NotSettled,
-    #[msg("signer is not the winner")]
+    #[msg("winner account does not match the on-chain-computed winner")]
     NotWinner,
+    #[msg("arithmetic overflow")]
+    MathOverflow,
     #[msg("judge signature is missing, malformed, or from the wrong pubkey")]
     BadJudgeSignature,
     #[msg("signed message does not match the expected (contest, scores) tuple")]

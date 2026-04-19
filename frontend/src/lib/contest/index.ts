@@ -11,5 +11,4 @@ export {
   joinContest,
   settleWithDevJudge,
   settleWithJudgeServer,
-  claimPot,
 } from "./actions";
