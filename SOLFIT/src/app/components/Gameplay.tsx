@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { Timer, Flame, Trophy, Zap, TrendingUp, Award, Plus } from 'lucide-react';
+import { Timer, Flame, Trophy, TrendingUp, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useGame } from '../../context/GameContext';
 import { PlayerAvatar } from './PlayerAvatar';
+import WorkoutCamera from './WorkoutCamera';
 
 interface LivePlayer {
   id: string;
@@ -24,7 +25,6 @@ export default function Gameplay() {
     (room?.players ?? []).map(p => ({ id: p.id, name: p.name, count: 0, isYou: p.id === playerId }))
   );
   const [gameEnded, setGameEnded] = useState(false);
-  const [repFlash, setRepFlash] = useState(false);
 
   const gameEndedRef = useRef(false);
   const playersRef = useRef(players);
@@ -83,8 +83,6 @@ export default function Gameplay() {
       emitRepUpdate(newCount);
       return { ...p, count: newCount };
     }));
-    setRepFlash(true);
-    setTimeout(() => setRepFlash(false), 120);
   }, [gameEnded, emitRepUpdate]);
 
   const sortedPlayers = [...players].sort((a, b) => b.count - a.count);
@@ -119,7 +117,7 @@ export default function Gameplay() {
           </div>
         </div>
 
-        {/* ── Desktop: 2-col (leaderboard | rep panel) ── */}
+        {/* ── Desktop: 2-col (leaderboard | progress + camera) ── */}
         <div className="md:grid md:grid-cols-[1fr_320px] md:gap-8 space-y-6 md:space-y-0 flex-1">
 
           {/* Left: Leaderboard */}
@@ -190,7 +188,7 @@ export default function Gameplay() {
             </div>
           </div>
 
-          {/* Right: Your progress + rep button */}
+          {/* Right: Your progress + camera */}
           <div className="flex flex-col gap-4 md:sticky md:top-6 md:self-start">
 
             {/* Your progress */}
@@ -210,28 +208,17 @@ export default function Gameplay() {
               <p className="text-[9px] font-black text-white/20 uppercase tracking-widest mt-2">{progress.toFixed(0)}% complete</p>
             </div>
 
-            {/* Rep button */}
-            <motion.button
-              whileTap={{ scale: 0.94 }}
-              onClick={handleRep}
-              disabled={gameEnded}
-              className={`w-full py-8 md:py-12 rounded-2xl font-black text-xl uppercase italic tracking-tighter transition-all flex flex-col items-center justify-center gap-2 ${
-                repFlash
-                  ? 'bg-white text-[#8b5cf6] shadow-[0_0_60px_rgba(255,255,255,0.3)]'
-                  : 'bg-gradient-to-r from-[#b794f6] to-[#8b5cf6] text-white shadow-[0_10px_40px_rgba(183,148,246,0.4)]'
-              } disabled:opacity-40`}
-            >
-              <Plus className="w-8 h-8" />
-              Tap for {gameType}
-            </motion.button>
-
-            {/* AI status */}
-            <div className="flex items-center justify-center gap-2">
-              <Zap className="w-3 h-3 text-[#b794f6]" />
-              <span className="text-[8px] font-bold text-white/20 uppercase tracking-widest text-center">
-                AI tracking active — each tap = 1 verified rep
-              </span>
+            {/* Live camera — centred in the column */}
+            <div className="flex justify-center">
+              <div className="w-full max-w-[280px]">
+                <WorkoutCamera
+                  onRep={handleRep}
+                  gameEnded={gameEnded}
+                  gameType={gameType}
+                />
+              </div>
             </div>
+
           </div>
         </div>
 

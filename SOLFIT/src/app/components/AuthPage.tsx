@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router';
 import { motion } from 'motion/react';
 import { Zap, ArrowRight } from 'lucide-react';
 import LoadingScreen from './LoadingScreen';
+import Antigravity from './Antigravity';
 
 export default function AuthPage() {
   const { loginWithRedirect, isAuthenticated, isLoading } = useAuth0();
@@ -21,18 +22,22 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen w-full bg-[#0a0a0f] flex flex-col items-center justify-between relative overflow-hidden px-6 py-12">
 
-      {/* Background glows */}
-      <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-[#b794f6]/12 rounded-full blur-[160px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-[#8b5cf6]/10 rounded-full blur-[120px] pointer-events-none" />
-
-      {/* Grid texture */}
-      <div
-        className="absolute inset-0 opacity-[0.025] pointer-events-none"
-        style={{
-          backgroundImage: 'linear-gradient(#b794f6 1px, transparent 1px), linear-gradient(90deg, #b794f6 1px, transparent 1px)',
-          backgroundSize: '60px 60px',
-        }}
-      />
+      {/* Antigravity particle canvas — full screen background */}
+      <div className="absolute inset-0 z-0">
+        <Antigravity
+          count={300}
+          magnetRadius={5}
+          ringRadius={7}
+          waveSpeed={0.4}
+          waveAmplitude={1}
+          particleSize={1.5}
+          lerpSpeed={0.05}
+          color="#9a75d7"
+          autoAnimate={true}
+          particleVariance={1}
+          particleShape="tetrahedron"
+        />
+      </div>
 
       {/* Top spacer */}
       <div />
@@ -83,7 +88,7 @@ export default function AuthPage() {
 
           <button
             onClick={handleLogin}
-            className="flex-1 bg-white/5 border border-white/10 rounded-2xl py-5 px-6 font-black text-lg text-white/70 uppercase italic tracking-tighter hover:bg-white/10 hover:border-[#b794f6]/30 hover:text-white active:scale-[0.98] transition-all"
+            className="flex-1 bg-white/5 border border-white/10 rounded-2xl py-5 px-6 font-black text-lg text-white/70 uppercase italic tracking-tighter hover:bg-white/10 hover:border-[#b794f6]/30 hover:text-white active:scale-[0.98] transition-all backdrop-blur-sm"
           >
             Log In
           </button>
