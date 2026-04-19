@@ -12,6 +12,7 @@ import AuthPage from './components/AuthPage';
 import AuthCallback from './components/AuthCallback';
 import AppLayout from './components/AppLayout';
 import LoadingScreen from './components/LoadingScreen';
+import SolanaTest from './components/SolanaTest';
 
 function AuthGuard() {
   const { isAuthenticated, isLoading } = useAuth0();
@@ -27,6 +28,7 @@ function AuthGuard() {
 const router = createBrowserRouter([
   { path: '/auth', Component: AuthPage },
   { path: '/callback', Component: AuthCallback },
+  { path: '/solana-test', Component: SolanaTest },
   {
     path: '/',
     Component: AuthGuard,

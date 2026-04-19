@@ -1,0 +1,276 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { BN } from "@coral-xyz/anchor";
+import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import {
+  claimPot,
+  connectPhantom,
+  createContest,
+  getDevJudge,
+  getProgram,
+  joinContest,
+  settleWithDevJudge,
+  type PhantomWallet,
+} from "../../lib/contest";
+
+const STATUS_LABELS = ["Open", "Active", "Settled", "Refunding"];
+
+type ContestData = {
+  creator: PublicKey;
+  judge: PublicKey;
+  wager: BN;
+  maxPlayers: number;
+  duration: number;
+  startTime: BN;
+  deadline: BN;
+  status: number;
+  winner: PublicKey;
+  players: PublicKey[];
+  finalScores: number[];
+};
+
+export default function SolanaTest() {
+  const [wallet, setWallet] = useState<PhantomWallet | null>(null);
+  const [contestAddr, setContestAddr] = useState("");
+  const [contestData, setContestData] = useState<ContestData | null>(null);
+  const [log, setLog] = useState<string[]>([]);
+  const pollRef = useRef<number | null>(null);
+
+  const append = useCallback((msg: string) => {
+    setLog((prev) => [...prev.slice(-30), `${new Date().toLocaleTimeString()}  ${msg}`]);
+  }, []);
+
+  const program = wallet ? getProgram(wallet) : null;
+
+  const refresh = useCallback(
+    async (addr?: string) => {
+      if (!program) return;
+      const target = addr ?? contestAddr;
+      if (!target) return;
+      try {
+        const pk = new PublicKey(target);
+        // @ts-expect-error — anchor's account access is dynamic
+        const data = (await program.account.contest.fetch(pk)) as ContestData;
+        setContestData(data);
+      } catch (e: any) {
+        append(`fetch failed: ${e.message ?? e}`);
+      }
+    },
+    [program, contestAddr, append],
+  );
+
+  useEffect(() => {
+    if (!contestAddr || !program) return;
+    if (pollRef.current) window.clearInterval(pollRef.current);
+    pollRef.current = window.setInterval(() => refresh(), 2000);
+    return () => {
+      if (pollRef.current) window.clearInterval(pollRef.current);
+    };
+  }, [contestAddr, program, refresh]);
+
+  async function handleConnect() {
+    try {
+      const w = await connectPhantom();
+      setWallet(w);
+      append(`connected ${w.publicKey.toBase58()}`);
+    } catch (e: any) {
+      append(`connect failed: ${e.message ?? e}`);
+    }
+  }
+
+  async function handleCreate() {
+    if (!program || !wallet) return;
+    const durationSecs = Number(prompt("Duration (seconds)?", "30") ?? "30");
+    const maxPlayers = Number(prompt("Max players (2-8)?", "2") ?? "2");
+    const wagerSol = Number(prompt("Wager (SOL)?", "0.01") ?? "0.01");
+    try {
+      const judgePk = getDevJudge().publicKey;
+      const contestId = new BN(Date.now());
+      append(`creating contest (duration=${durationSecs}s, max=${maxPlayers}, wager=${wagerSol} SOL)...`);
+      const { signature, contestPda } = await createContest(program, {
+        contestId,
+        wagerLamports: new BN(Math.round(wagerSol * LAMPORTS_PER_SOL)),
+        maxPlayers,
+        durationSecs,
+        judge: judgePk,
+      });
+      append(`created @ ${contestPda.toBase58()}  sig=${signature.slice(0, 12)}…`);
+      setContestAddr(contestPda.toBase58());
+      await refresh(contestPda.toBase58());
+    } catch (e: any) {
+      append(`create failed: ${e.message ?? e}`);
+    }
+  }
+
+  async function handleJoin() {
+    if (!program || !contestAddr) return;
+    try {
+      const sig = await joinContest(program, new PublicKey(contestAddr));
+      append(`joined  sig=${sig.slice(0, 12)}…`);
+      await refresh();
+    } catch (e: any) {
+      append(`join failed: ${e.message ?? e}`);
+    }
+  }
+
+  async function handleSettle() {
+    if (!program || !contestData || !contestAddr) return;
+    const defaultScores = contestData.players.map(() => 0).join(",");
+    const raw = prompt(
+      `Scores (comma-separated, ${contestData.players.length} values)?`,
+      defaultScores,
+    );
+    if (!raw) return;
+    const scores = raw.split(",").map((s) => Number(s.trim()));
+    if (scores.length !== contestData.players.length || scores.some(isNaN)) {
+      append(`bad scores input: ${raw}`);
+      return;
+    }
+    try {
+      const sig = await settleWithDevJudge(
+        program,
+        new PublicKey(contestAddr),
+        scores,
+      );
+      append(`settled  sig=${sig.slice(0, 12)}…`);
+      await refresh();
+    } catch (e: any) {
+      append(`settle failed: ${e.message ?? e}`);
+    }
+  }
+
+  async function handleClaim() {
+    if (!program || !contestAddr) return;
+    try {
+      const sig = await claimPot(program, new PublicKey(contestAddr));
+      append(`claimed  sig=${sig.slice(0, 12)}…`);
+      setContestData(null);
+      setContestAddr("");
+    } catch (e: any) {
+      append(`claim failed: ${e.message ?? e}`);
+    }
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const deadline = contestData?.deadline.toNumber() ?? 0;
+  const secsLeft = Math.max(0, deadline - now);
+  const me = wallet?.publicKey.toBase58();
+  const iAmWinner =
+    contestData?.winner && contestData.winner.toBase58() === me;
+  const canStart = !!program;
+  const statusLabel = contestData ? STATUS_LABELS[contestData.status] : "—";
+
+  return (
+    <div
+      style={{
+        fontFamily: "ui-monospace, monospace",
+        padding: 24,
+        maxWidth: 720,
+        margin: "0 auto",
+        color: "#ddd",
+        background: "#111",
+        minHeight: "100vh",
+      }}
+    >
+      <h1 style={{ fontSize: 20, marginBottom: 8 }}>solfit contest — dev harness</h1>
+      <p style={{ fontSize: 12, color: "#888", marginBottom: 16 }}>
+        End-to-end test of the on-chain flow against devnet. Dev judge key is
+        stored in localStorage — clear it to rotate.
+      </p>
+
+      <section style={section}>
+        <div>Wallet: <code>{me ?? "not connected"}</code></div>
+        {!wallet && <button onClick={handleConnect} style={btn}>Connect Phantom</button>}
+      </section>
+
+      <section style={section}>
+        <button onClick={handleCreate} disabled={!canStart} style={btn}>Create contest</button>
+        <input
+          type="text"
+          placeholder="contest PDA"
+          value={contestAddr}
+          onChange={(e) => setContestAddr(e.target.value)}
+          style={input}
+        />
+        <button onClick={() => refresh()} disabled={!canStart} style={btn}>Load</button>
+        <button onClick={handleJoin} disabled={!canStart || !contestData || contestData.status !== 0} style={btn}>Join</button>
+      </section>
+
+      {contestData && (
+        <section style={section}>
+          <div>Status: <strong>{statusLabel}</strong></div>
+          <div>Players: {contestData.players.length}/{contestData.maxPlayers}</div>
+          <div>Wager: {(contestData.wager.toNumber() / LAMPORTS_PER_SOL).toFixed(3)} SOL</div>
+          {contestData.status === 1 && (
+            <div>Deadline in: {secsLeft}s</div>
+          )}
+          {contestData.status === 2 && (
+            <div>Winner: <code>{contestData.winner.toBase58()}</code></div>
+          )}
+          <ul style={{ marginTop: 8, fontSize: 12 }}>
+            {contestData.players.map((p, i) => (
+              <li key={i}>
+                [{i}] {p.toBase58()}
+                {contestData.finalScores[i] !== undefined && ` → ${contestData.finalScores[i]}`}
+              </li>
+            ))}
+          </ul>
+          <div style={{ marginTop: 12 }}>
+            <button
+              onClick={handleSettle}
+              disabled={contestData.status !== 1 || secsLeft > 0}
+              style={btn}
+            >
+              Settle (dev judge)
+            </button>
+            <button
+              onClick={handleClaim}
+              disabled={contestData.status !== 2 || !iAmWinner}
+              style={btn}
+            >
+              Claim pot
+            </button>
+          </div>
+        </section>
+      )}
+
+      <section style={section}>
+        <div style={{ fontSize: 12, color: "#888" }}>log</div>
+        <pre style={{ fontSize: 11, maxHeight: 240, overflow: "auto", margin: 0 }}>
+          {log.join("\n")}
+        </pre>
+      </section>
+    </div>
+  );
+}
+
+const section: React.CSSProperties = {
+  marginBottom: 16,
+  padding: 12,
+  border: "1px solid #333",
+  borderRadius: 6,
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+};
+
+const btn: React.CSSProperties = {
+  padding: "6px 12px",
+  background: "#222",
+  border: "1px solid #444",
+  color: "#ddd",
+  cursor: "pointer",
+  borderRadius: 4,
+  fontFamily: "inherit",
+  fontSize: 12,
+  marginRight: 6,
+};
+
+const input: React.CSSProperties = {
+  padding: "6px 10px",
+  background: "#1a1a1a",
+  border: "1px solid #333",
+  color: "#ddd",
+  fontFamily: "inherit",
+  fontSize: 12,
+  flex: 1,
+};
