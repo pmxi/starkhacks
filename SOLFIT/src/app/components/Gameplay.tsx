@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { Timer, Flame, Trophy, TrendingUp, Award } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -97,6 +97,16 @@ export default function Gameplay() {
       navigate('/results', { state: { results: sorted, gameType, entryFee: settings.entryFee, playerCount: sorted.length } });
     }
   }, [timeLeft, gameEnded, emitGameEnd, navigate, gameType, settings.entryFee]);
+
+  const handleRep = useCallback(() => {
+    if (gameEnded) return;
+    setPlayers(prev => prev.map(p => {
+      if (!p.isYou) return p;
+      const newCount = p.count + 1;
+      emitRepUpdate(newCount);
+      return { ...p, count: newCount };
+    }));
+  }, [gameEnded, emitRepUpdate]);
 
   const sortedPlayers = [...players].sort((a, b) => b.count - a.count);
   const leaderId = sortedPlayers[0]?.count > 0 ? sortedPlayers[0]?.id : null;
